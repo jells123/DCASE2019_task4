@@ -4,12 +4,12 @@ import pandas as pd
 
 workspace = ".."
 # Dataset Paths
-weak = 'dataset/metadata/train/weak.csv'
-unlabel = 'dataset/metadata/train/unlabel_in_domain.csv'
-synthetic = 'dataset/metadata/train/synthetic.csv'
-validation = 'dataset/metadata/validation/validation.csv'
-test2018 = 'dataset/metadata/validation/test_dcase2018.csv'
-eval2018 = 'dataset/metadata/validation/eval_dcase2018.csv'
+weak = os.path.join('dataset', 'metadata', 'train', 'weak.csv')
+unlabel = os.path.join('dataset', 'metadata', 'train', 'unlabel_in_domain.csv')
+synthetic = os.path.join('dataset', 'metadata', 'train', 'synthetic.csv')
+validation = os.path.join('dataset', 'metadata', 'validation', 'validation.csv')
+test2018 = os.path.join('dataset', 'metadata', 'validation', 'test_dcase2018.csv')
+eval2018 = os.path.join('dataset', 'metadata', 'validation', 'eval_dcase2018.csv')
 
 # config
 # prepare_data

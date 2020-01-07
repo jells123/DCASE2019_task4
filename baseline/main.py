@@ -334,8 +334,8 @@ if __name__ == '__main__':
 
     if state:
         # load state into models
-        crnn.load(parameters=state["model"]["state_dict"])
-        crnn_ema.load(parameters=state["model_ema"]["state_dict"])
+        crnn.load(parameters=state["model"]["state_dict"], load_rnn=True, load_dense=False)
+        crnn_ema.load(parameters=state["model_ema"]["state_dict"], load_rnn=True, load_dense=False)
         LOG.info("Model loaded at epoch: {}".format(state["epoch"]))
     else:
         crnn.apply(weights_init)
