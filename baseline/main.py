@@ -188,31 +188,29 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("-s", '--subpart_data', type=int, default=None, dest="subpart_data",
                         help="Number of files to be used. Useful when testing on small number of files.")
-    parser.add_argument("-n", '--no_synthetic', dest='no_synthetic', action='store_true', default=False,
-                        help="Not using synthetic labels during training")
     parser.add_argument("-m", '--model_path', type=str, default=None, dest="model_path",
                         help="Path of the model to initialize with.")
     parser.add_argument("-d", '--no_download', dest='no_download', action='store_true', default=False,
                         help="Not downloading data based on csv files.")
     parser.add_argument("-o", '--ordered', dest='sort', action='store_true', default=True,
                         help="Sorting data so as to perform Curriculum Learning.")
+    parser.add_argument("-u", '--skip_unlabeled', dest='skip_unlabeled', action='store_true', default=False,
+                        help="Skipping large unlabeled audio dataset.")
     f_args = parser.parse_args()
 
     reduced_number_of_data = f_args.subpart_data
-    no_synthetic = f_args.no_synthetic
     model_path = f_args.model_path
     download = not f_args.no_download
     sort = f_args.sort
+    skip_unlabeled = f_args.skip_unlabeled
 
     LOG.info("subpart_data = {}".format(reduced_number_of_data))
-    LOG.info("Using synthetic data = {}".format(not no_synthetic))
     LOG.info("Using pre-trained model = {}".format(model_path))
     LOG.info("Downloading data = {}".format(download))
+    LOG.info("Sorting = {}".format(sort))
+    LOG.info("Use unlabeled = {}".format(not skip_unlabeled))
 
-    if no_synthetic:
-        add_dir_model_name = "_no_synthetic"
-    else:
-        add_dir_model_name = "_with_synthetic"
+    add_dir_model_name = "_with_synthetic"
 
     if model_path:
         state = torch.load(model_path, map_location="cpu")
@@ -282,14 +280,16 @@ if __name__ == '__main__':
     train_synth_data = DataLoadDf(train_synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                   transform=transforms)
 
-    if not no_synthetic:
+
+    if skip_unlabeled:
+        list_dataset = [train_weak_data, train_synth_data]
+        batch_sizes = [cfg.batch_size//2, cfg.batch_size//2]
+        strong_mask = slice(cfg.batch_size//2, cfg.batch_size)
+    else:
         list_dataset = [train_weak_data, unlabel_data, train_synth_data]
         batch_sizes = [cfg.batch_size//4, cfg.batch_size//2, cfg.batch_size//4]
         strong_mask = slice(cfg.batch_size//4 + cfg.batch_size//2, cfg.batch_size)
-    else:
-        list_dataset = [train_weak_data, unlabel_data]
-        batch_sizes = [cfg.batch_size // 4, 3 * cfg.batch_size // 4]
-        strong_mask = None
+
     # Assume weak data is always the first one
     weak_mask = slice(batch_sizes[0])
 
@@ -420,11 +420,11 @@ if __name__ == '__main__':
             torch.save(state, model_fname)
 
         if cfg.save_best:
-            if not no_synthetic:
-                global_valid = valid_events_metric.results_class_wise_average_metrics()['f_measure']['f_measure']
-                global_valid = global_valid + np.mean(weak_metric)
-            else:
-                global_valid = np.mean(weak_metric)
+            # if not no_synthetic:
+            global_valid = valid_events_metric.results_class_wise_average_metrics()['f_measure']['f_measure']
+            global_valid = global_valid + np.mean(weak_metric)
+            # else:
+            #     global_valid = np.mean(weak_metric)
             if save_best_cb.apply(global_valid):
                 model_fname = os.path.join(saved_model_dir, "baseline_best")
                 torch.save(state, model_fname)
