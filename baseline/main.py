@@ -194,13 +194,15 @@ if __name__ == '__main__':
                         help="Path of the model to initialize with.")
     parser.add_argument("-d", '--no_download', dest='no_download', action='store_true', default=False,
                         help="Not downloading data based on csv files.")
+    parser.add_argument("-o", '--ordered', dest='sort', action='store_true', default=True,
+                        help="Sorting data so as to perform Curriculum Learning.")
     f_args = parser.parse_args()
 
     reduced_number_of_data = f_args.subpart_data
     no_synthetic = f_args.no_synthetic
     model_path = f_args.model_path
     download = not f_args.no_download
-    sort = True # TODO: move to arguments
+    sort = f_args.sort
 
     LOG.info("subpart_data = {}".format(reduced_number_of_data))
     LOG.info("Using synthetic data = {}".format(not no_synthetic))
@@ -338,8 +340,8 @@ if __name__ == '__main__':
 
     if state:
         # load state into models
-        crnn.load(parameters=state["model"]["state_dict"], load_rnn=True, load_dense=False)
-        crnn_ema.load(parameters=state["model_ema"]["state_dict"], load_rnn=True, load_dense=False)
+        crnn.load(parameters=state["model"]["state_dict"], load_cnn=True, load_rnn=True, load_dense=True)
+        crnn_ema.load(parameters=state["model_ema"]["state_dict"], load_cnn=True, load_rnn=True, load_dense=True)
         LOG.info("Model loaded at epoch: {}".format(state["epoch"]))
     else:
         LOG.info(crnn)
@@ -396,16 +398,16 @@ if __name__ == '__main__':
         train(training_data, crnn, optimizer, epoch, ema_model=crnn_ema, weak_mask=weak_mask, strong_mask=strong_mask)
 
         crnn = crnn.eval()
-        # LOG.info("\n ### Valid synthetic metric ### \n")
+        LOG.info("\n ### Valid synthetic metric ### \n")
         predictions = get_predictions(crnn, valid_synth_data, many_hot_encoder.decode_strong, pooling_time_ratio,
                                       save_predictions=None)
         valid_events_metric = compute_strong_metrics(predictions, valid_synth_df, log=False)
 
-        # LOG.info("\n ### Valid weak metric ### \n")
+        LOG.info("\n ### Valid weak metric ### \n")
         weak_metric = get_f_measure_by_class(crnn, len(classes),
                                              DataLoader(valid_weak_data, batch_size=cfg.batch_size))
 
-        # LOG.info("Weak F1-score per class: \n {}".format(pd.DataFrame(weak_metric * 100, many_hot_encoder.labels)))
+        LOG.info("Weak F1-score per class: \n {}".format(pd.DataFrame(weak_metric * 100, many_hot_encoder.labels)))
         LOG.info("Weak F1-score macro averaged: {}".format(np.mean(weak_metric)))
 
         state['model']['state_dict'] = crnn.state_dict()
