@@ -192,7 +192,7 @@ if __name__ == '__main__':
                         help="Path of the model to initialize with.")
     parser.add_argument("-d", '--no_download', dest='no_download', action='store_true', default=False,
                         help="Not downloading data based on csv files.")
-    parser.add_argument("-o", '--ordered', dest='sort', action='store_true', default=True,
+    parser.add_argument("-o", '--ordered', dest='sort', action='store_true', default=False,
                         help="Sorting data so as to perform Curriculum Learning.")
     parser.add_argument("-u", '--skip_unlabeled', dest='skip_unlabeled', action='store_true', default=False,
                         help="Skipping large unlabeled audio dataset.")
@@ -399,7 +399,7 @@ if __name__ == '__main__':
         LOG.info("\n ### Valid synthetic metric ### \n")
         predictions = get_predictions(crnn, valid_synth_data, many_hot_encoder.decode_strong, pooling_time_ratio,
                                       save_predictions=None)
-        valid_events_metric = compute_strong_metrics(predictions, valid_synth_df, log=False)
+        valid_events_metric = compute_strong_metrics(predictions, valid_synth_df, log=True)
 
         LOG.info("\n ### Valid weak metric ### \n")
         weak_metric = get_f_measure_by_class(crnn, len(classes),
