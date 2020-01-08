@@ -30,6 +30,10 @@ class CRNN(nn.Module):
             self.dense_softmax = nn.Linear(n_RNN_cell*2, nclass)
             self.softmax = nn.Softmax(dim=-1)
 
+    def freeze_cnn(self):
+        for param in self.cnn.parameters():
+            param.requires_grad = False
+
     def load_cnn(self, parameters):
         self.cnn.load(parameters)
         if not self.train_cnn:
