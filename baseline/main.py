@@ -21,6 +21,7 @@ from DatasetDcase2019Task4 import DatasetDcase2019Task4
 from DataLoad import DataLoadDf, ConcatDataset, MultiStreamBatchSampler
 from utils.Scaler import Scaler
 from TestModel import test_model
+from feature_extractor import extract_features_from_meta
 from evaluation_measures import get_f_measure_by_class, get_predictions, audio_tagging_results, compute_strong_metrics
 from models.CRNN import CRNN
 import config as cfg
@@ -42,9 +43,9 @@ def check_class_distribution(df, csv):
         for cl in cfg.classes:
             counts.append(df.event_label.str.count(cl).sum())
 
-    all_configurations.to_csv(os.path.join(cfg.workspace, cfg.features, "class_count", "all" + filename))
+    all_configurations.to_csv(os.path.join(cfg.workspace, cfg.features, "class_count", "all" + filename), header=True)
     occurances = pd.Series(counts, index=cfg.classes)
-    occurances.to_csv(os.path.join(cfg.workspace, cfg.features, "class_count", filename))
+    occurances.to_csv(os.path.join(cfg.workspace, cfg.features, "class_count", filename), header=True)
 
 
 def adjust_learning_rate(optimizer, rampup_value, rampdown_value):
@@ -279,8 +280,8 @@ if __name__ == '__main__':
     LOG.info("Downloading data = {}".format(download))
     LOG.info("Sorting = {}".format(sort))
     LOG.info("Use unlabeled = {}".format(not skip_unlabeled))
-    LOG.info("Sort according to spectral flatness= {}".format(use_flatness))
-    LOG.info("Sort according to snr= {}".format(use_snr))
+    LOG.info("Sort according to spectral flatness = {}".format(use_flatness))
+    LOG.info("Sort according to snr = {}".format(use_snr))
 
     add_dir_model_name = "_with_synthetic"
 
@@ -335,6 +336,12 @@ if __name__ == '__main__':
                                     save_log_feature=False)
 
     if use_flatness or use_snr:
+        if not os.path.isfile(os.path.join(cfg.workspace, cfg.weak_f)):
+            extract_features_from_meta(os.path.join(cfg.workspace, cfg.weak))
+        if not os.path.isfile(os.path.join(cfg.workspace, cfg.synthetic_f)):
+            extract_features_from_meta(os.path.join(cfg.workspace, cfg.synthetic))
+        if not os.path.isfile(os.path.join(cfg.workspace, cfg.unlabel_f)):
+            extract_features_from_meta(os.path.join(cfg.workspace, cfg.unlabel))
         weak_path = cfg.weak_f
         synthetic_path = cfg.synthetic_f
         unlabel_path = cfg.unlabel_f
@@ -384,12 +391,14 @@ if __name__ == '__main__':
         train_weak_df = sort_weak_df(train_weak_df)
         train_synth_df = sort_synthetic_df(train_synth_df)
         # TODO: Research on cc learning, is the validation set ordered accordingly?
-    elif use_flatness:
+    if use_flatness:
+        # sort ascending - the values are from -inf to 0 where -inf is the perfect sound and 0 is a perfect white noise
         train_weak_df = train_weak_df.sort_values(by=["Spectral flatness"])
         train_synth_df = train_synth_df.sort_values(by=["Spectral flatness"])
-    elif use_snr:
-        train_weak_df = train_weak_df.sort_values(by=["SNR"])
-        train_synth_df = train_synth_df.sort_values(by=["SNR"])
+    if use_snr:
+        # sort descending - the values above 0 dB mean more signal than noise
+        train_weak_df = train_weak_df.sort_values(by=["SNR"], ascending=False)
+        train_synth_df = train_synth_df.sort_values(by=["SNR"], ascending=False)
 
     train_weak_data = DataLoadDf(train_weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                  transform=transforms)
