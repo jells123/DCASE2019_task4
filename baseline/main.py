@@ -439,6 +439,8 @@ if __name__ == '__main__':
     for param in crnn_ema.parameters():
         param.detach_()
 
+    crnn, crnn_ema = to_cuda_if_available([crnn, crnn_ema])
+
     if not state:
         optim_kwargs = {"lr": 0.001, "betas": (0.9, 0.999)}
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, crnn.parameters()), **optim_kwargs)
