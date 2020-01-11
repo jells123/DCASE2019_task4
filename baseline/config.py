@@ -13,7 +13,7 @@ eval2018 = os.path.join('dataset', 'metadata', 'validation', 'eval_dcase2018.csv
 features = os.path.join('dataset', 'features', 'train')
 weak_f = os.path.join('dataset', 'features', 'train', 'weak.csv')
 synthetic_f = os.path.join('dataset', 'features', 'train', 'synthetic.csv')
-unlabel_f = os.path.join('dataset', 'features', 'train', 'unlabel.csv')
+unlabel_f = os.path.join('dataset', 'features', 'train', 'unlabel_in_domain.csv')
 
 # config
 # prepare_data

@@ -383,9 +383,9 @@ if __name__ == '__main__':
     train_synth_df.offset = train_synth_df.offset * cfg.sample_rate // cfg.hop_length // pooling_time_ratio
     LOG.debug(valid_synth_df.event_label.value_counts())
 
-    check_class_distribution(weak_df, cfg.weak)
-    check_class_distribution(synthetic_df, cfg.synthetic)
-    check_class_distribution(validation_df, cfg.validation)
+    # check_class_distribution(weak_df, cfg.weak)
+    # check_class_distribution(synthetic_df, cfg.synthetic)
+    # check_class_distribution(validation_df, cfg.validation)
 
     if sort:
         train_weak_df = sort_weak_df(train_weak_df)
