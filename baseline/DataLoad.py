@@ -561,9 +561,12 @@ class MultiStreamBatchSampler(Sampler):
 
     def __iter__(self):
         indices = self.data_source.cluster_indices
-        if self.shuffle:
-            for i in range(len(self.batch_sizes)):
+        for i in range(len(self.batch_sizes)):
+            if self.shuffle:
                 indices[i] = np.random.permutation(indices[i])
+            else:
+                indices[i] = np.arange(start=indices[i].start, step=indices[i].step, stop=indices[i].stop)
+
         iterators = []
         for i in range(len(self.batch_sizes)):
             iterators.append(grouper(indices[i], self.batch_sizes[i]))

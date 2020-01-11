@@ -373,8 +373,12 @@ if __name__ == '__main__':
 
     if skip_unlabeled:
         list_dataset = [train_weak_data, train_synth_data]
-        batch_sizes = [cfg.batch_size // 2, cfg.batch_size // 2]
-        strong_mask = slice(cfg.batch_size // 2, cfg.batch_size)
+        if cfg.weak_part_size and cfg.strong_part_size:
+            batch_sizes = [cfg.weak_part_size, cfg.strong_part_size]
+            strong_mask = slice(cfg.weak_part_size, cfg.batch_size)
+        else:
+            batch_sizes = [cfg.batch_size // 2, cfg.batch_size // 2]
+            strong_mask = slice(cfg.batch_size // 2, cfg.batch_size)
     else:
         list_dataset = [train_weak_data, unlabel_data, train_synth_data]
         batch_sizes = [cfg.batch_size // 4, cfg.batch_size // 2, cfg.batch_size // 4]
