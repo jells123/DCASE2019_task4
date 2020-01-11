@@ -451,6 +451,7 @@ if __name__ == '__main__':
         'consistency_strong_loss': 'Consistency strong',
     }
     with open(res_fullpath, 'w') as file:
+        file.write(str(f_args) + "\n\n") # dump f_args, just in case
         file.write(';'.join([*res_columns, "global_valid"]) + "\n")
 
     res_classes_filename = "class_" + res_filename
