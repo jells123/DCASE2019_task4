@@ -34,6 +34,10 @@ class CRNN(nn.Module):
         for param in self.cnn.parameters():
             param.requires_grad = False
 
+    def freeze_rnn(self):
+        for param in self.rnn.parameters():
+            param.requires_grad = False
+
     def load_cnn(self, parameters):
         self.cnn.load(parameters)
         if not self.train_cnn:

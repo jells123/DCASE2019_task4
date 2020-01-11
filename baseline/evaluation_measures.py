@@ -244,7 +244,7 @@ def compute_strong_metrics(predictions, valid_df, pooling_time_ratio=None, log=T
     if log:
         LOG.info(metric_event)
         LOG.info(metric_segment)
-    return metric_event
+    return metric_event, metric_segment
 
 
 def format_df(df, mhe):

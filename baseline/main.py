@@ -27,6 +27,7 @@ import config as cfg
 from utils.utils import ManyHotEncoder, create_folder, SaveBest, to_cuda_if_available, weights_init, \
     get_transforms, AverageMeterSet
 from utils.Logger import LOG
+from datetime import datetime
 
 
 def adjust_learning_rate(optimizer, rampup_value, rampdown_value):
@@ -69,6 +70,7 @@ def train(train_loader, model, optimizer, epoch, ema_model=None, weak_mask=None,
 
     LOG.debug("Nb batches: {}".format(len(train_loader)))
     start = time.time()
+
     rampup_length = len(train_loader) * cfg.n_epoch // 2
     for i, (batch_input, ema_batch_input, target) in enumerate(train_loader):
         global_step = epoch * len(train_loader) + i
@@ -164,38 +166,74 @@ def train(train_loader, model, optimizer, epoch, ema_model=None, weak_mask=None,
         '{meters}'.format(
             epoch, epoch_time, meters=meters))
 
+    return meters
+
+
 def sort_weak_df(weak_df):
     # sort by classes per file counts
-    weak_df['event_labels_count'] = weak_df['event_labels'].apply(lambda x : x.count(','))
+    weak_df['event_labels_count'] = weak_df['event_labels'].apply(lambda x: x.count(','))
     weak_df = weak_df.sort_values(by='event_labels_count', ascending=True)
     # bring df back to original state
     weak_df = weak_df.reset_index(drop=True)
     weak_df = weak_df.drop(columns='event_labels_count')
     return weak_df
 
+
 def sort_synthetic_df(synthetic_df):
     # sort by classes per file counts
-    label_counts_df = synthetic_df[['filename', 'event_label']].groupby('filename').count().rename(columns={"event_label" : "event_labels_count"})
+    label_counts_df = synthetic_df[['filename', 'event_label']].groupby('filename').count().rename(
+        columns={"event_label": "event_labels_count"})
     synthetic_df = synthetic_df.join(label_counts_df, on='filename', how='outer')
     # bring df back to original state
     synthetic_df = synthetic_df.sort_values(by='event_labels_count', ascending=True)
     synthetic_df = synthetic_df.drop(columns='event_labels_count')
     return synthetic_df
 
-if __name__ == '__main__':
-    print("MEAN TEACHER STARTS")
-    LOG.info("MEAN TEACHER")
-    parser = argparse.ArgumentParser(description="")
+
+def get_metrics_result_list(event_metric):
+    precision = event_metric['Ntp'] / (event_metric['Ntp'] + event_metric['Nfp'] + 1e-15)
+    recall = event_metric['Ntp'] / (event_metric['Ntp'] + event_metric['Nfn'] + 1e-15)
+    f1 = 2 * (precision * recall) / (precision + recall + 1e-15)
+    acc = (event_metric['Ntp'] + event_metric['Ntn']) / event_metric['Nref']
+    results = [event_metric['Nref'], f1, precision, recall, acc]
+    return results
+
+
+def add_parser_arguments(parser):
+    # Configuration: data subset, model path etc
     parser.add_argument("-s", '--subpart_data', type=int, default=None, dest="subpart_data",
                         help="Number of files to be used. Useful when testing on small number of files.")
     parser.add_argument("-m", '--model_path', type=str, default=None, dest="model_path",
                         help="Path of the model to initialize with.")
     parser.add_argument("-d", '--no_download', dest='no_download', action='store_true', default=False,
                         help="Not downloading data based on csv files.")
+
+    # Learning config: whether to sort data, use unlabeled samples
     parser.add_argument("-o", '--ordered', dest='sort', action='store_true', default=False,
                         help="Sorting data so as to perform Curriculum Learning.")
     parser.add_argument("-u", '--skip_unlabeled', dest='skip_unlabeled', action='store_true', default=False,
                         help="Skipping large unlabeled audio dataset.")
+
+    # Neural-network related
+    parser.add_argument("-c", '--freeze_cnn', dest='freeze_cnn', action='store_true', default=False,
+                        help="Freezing loaded CNN weights.")
+    parser.add_argument("-r", '--freeze_rnn', dest='freeze_rnn', action='store_true', default=False,
+                        help="Freezing loaded RNN weights.")
+
+    parser.add_argument('--skip_cnn', dest='skip_cnn', action='store_true', default=False,
+                        help="Not loading CNN layers weights.")
+    parser.add_argument('--skip_rnn', dest='skip_rnn', action='store_true', default=False,
+                        help="Not loading RNN layers weights.")
+    parser.add_argument('--skip_dense', dest='skip_dense', action='store_true', default=False,
+                        help="Not loading Dense layers weights.")
+    return parser
+
+
+if __name__ == '__main__':
+    LOG.info("MEAN TEACHER")
+
+    parser = argparse.ArgumentParser(description="")
+    parser = add_parser_arguments(parser)
     f_args = parser.parse_args()
 
     reduced_number_of_data = f_args.subpart_data
@@ -203,6 +241,13 @@ if __name__ == '__main__':
     download = not f_args.no_download
     sort = f_args.sort
     skip_unlabeled = f_args.skip_unlabeled
+
+    freeze_cnn = f_args.freeze_cnn
+    freeze_rnn = f_args.freeze_rnn
+
+    skip_cnn = f_args.skip_cnn
+    skip_rnn = f_args.skip_rnn
+    skip_dense = f_args.skip_dense
 
     LOG.info("subpart_data = {}".format(reduced_number_of_data))
     LOG.info("Using pre-trained model = {}".format(model_path))
@@ -280,15 +325,14 @@ if __name__ == '__main__':
     train_synth_data = DataLoadDf(train_synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                   transform=transforms)
 
-
     if skip_unlabeled:
         list_dataset = [train_weak_data, train_synth_data]
-        batch_sizes = [cfg.batch_size//2, cfg.batch_size//2]
-        strong_mask = slice(cfg.batch_size//2, cfg.batch_size)
+        batch_sizes = [cfg.batch_size // 2, cfg.batch_size // 2]
+        strong_mask = slice(cfg.batch_size // 2, cfg.batch_size)
     else:
         list_dataset = [train_weak_data, unlabel_data, train_synth_data]
-        batch_sizes = [cfg.batch_size//4, cfg.batch_size//2, cfg.batch_size//4]
-        strong_mask = slice(cfg.batch_size//4 + cfg.batch_size//2, cfg.batch_size)
+        batch_sizes = [cfg.batch_size // 4, cfg.batch_size // 2, cfg.batch_size // 4]
+        strong_mask = slice(cfg.batch_size // 4 + cfg.batch_size // 2, cfg.batch_size)
 
     # Assume weak data is always the first one
     weak_mask = slice(batch_sizes[0])
@@ -316,7 +360,7 @@ if __name__ == '__main__':
     valid_synth_data = DataLoadDf(valid_synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                   transform=transforms_valid)
     valid_weak_data = DataLoadDf(valid_weak_df, dataset.get_feature_file, many_hot_encoder.encode_weak,
-                                  transform=transforms_valid)
+                                 transform=transforms_valid)
 
     # Eval 2018
     eval_2018_df = dataset.initialize_and_get_df(cfg.eval2018, reduced_number_of_data, download=download)
@@ -329,6 +373,7 @@ if __name__ == '__main__':
 
     if state:
         crnn_kwargs = state["model"]["kwargs"]
+        crnn_kwargs['attention'] = True
     else:
         crnn_kwargs = cfg.crnn_kwargs
 
@@ -340,8 +385,10 @@ if __name__ == '__main__':
 
     if state:
         # load state into models
-        crnn.load(parameters=state["model"]["state_dict"], load_cnn=True, load_rnn=True, load_dense=True)
-        crnn_ema.load(parameters=state["model_ema"]["state_dict"], load_cnn=True, load_rnn=True, load_dense=True)
+        crnn.load(parameters=state["model"]["state_dict"], load_cnn=(not skip_cnn), load_rnn=(not skip_rnn),
+                  load_dense=(not skip_dense))
+        crnn_ema.load(parameters=state["model_ema"]["state_dict"], load_cnn=(not skip_cnn), load_rnn=(not skip_rnn),
+                      load_dense=(not skip_dense))
         LOG.info("Model loaded at epoch: {}".format(state["epoch"]))
 
     for param in crnn_ema.parameters():
@@ -358,7 +405,7 @@ if __name__ == '__main__':
         else:
             NotImplementedError("Only models trained with Adam optimizer supported for now")
 
-    bce_loss = nn.BCELoss() # ? unused ?
+    bce_loss = nn.BCELoss()  # ? unused ?
     if not state:
         state = {
             'model': {"name": crnn.__class__.__name__,
@@ -381,32 +428,76 @@ if __name__ == '__main__':
     save_best_cb = SaveBest("sup")
 
     if state:
-        crnn.freeze_cnn()
-        crnn_ema.freeze_cnn()
+        if freeze_cnn:
+            crnn.freeze_cnn()
+            crnn_ema.freeze_cnn()
+        if freeze_rnn:
+            crnn.freeze_rnn()
+            crnn_ema.freeze_rnn()
+
+    res_filename = datetime.now().strftime("%d-%m-%Y_%I-%M-%S") + ".csv"
+    LOG.info(f"Saving results using {res_filename}")
+    res_fullpath = os.path.join('..', 'results', res_filename)
+    res_columns = ['weak_loss', 'strong_loss', 'consistency_weak_loss', 'consistency_strong_loss']
+    map_res_columns = {
+        'weak_loss': 'weak_class_loss',
+        'strong_loss': 'Strong loss',
+        'consistency_weak_loss': 'Consistency weak',
+        'consistency_strong_loss': 'Consistency strong',
+    }
+    with open(res_fullpath, 'w') as file:
+        file.write(';'.join([*res_columns, "global_valid"]) + "\n")
+
+    res_classes_filename = "class_" + res_filename
+    res_classes_columns = ['class_name', 'weak-F1', 'Nref', 'F', 'Pre', 'Rec', 'Acc', 'Nref_Seg', 'F_Seg', 'Pre_Seg',
+                           'Rec_Seg', 'Acc_Seg']
+    res_classes_fullpath = os.path.join('..', 'results', res_classes_filename)
+    with open(res_classes_fullpath, 'w') as file:
+        file.write(';'.join(res_classes_columns) + "\n")
 
     # ##############
     # Train
     # ##############
     for epoch in range(cfg.n_epoch):
+        LOG.info(f"\n\n\t>>> >>> EPOCH {epoch}\n")
         crnn = crnn.train()
         crnn_ema = crnn_ema.train()
 
         [crnn, crnn_ema] = to_cuda_if_available([crnn, crnn_ema])
 
-        train(training_data, crnn, optimizer, epoch, ema_model=crnn_ema, weak_mask=weak_mask, strong_mask=strong_mask)
+        meters = train(training_data, crnn, optimizer, epoch, ema_model=crnn_ema, weak_mask=weak_mask,
+                       strong_mask=strong_mask)
+        event_results = [str(meters[map_res_columns[m]].val) for m in res_columns]
 
         crnn = crnn.eval()
-        LOG.info("\n ### Valid synthetic metric ### \n")
-        predictions = get_predictions(crnn, valid_synth_data, many_hot_encoder.decode_strong, pooling_time_ratio,
-                                      save_predictions=None)
-        valid_events_metric = compute_strong_metrics(predictions, valid_synth_df, log=True)
 
         LOG.info("\n ### Valid weak metric ### \n")
         weak_metric = get_f_measure_by_class(crnn, len(classes),
                                              DataLoader(valid_weak_data, batch_size=cfg.batch_size))
+        per_class_results = dict(zip(many_hot_encoder.labels, weak_metric))
+        per_class_results = {k: [per_class_results[k]] for k in per_class_results.keys()}
 
         LOG.info("Weak F1-score per class: \n {}".format(pd.DataFrame(weak_metric * 100, many_hot_encoder.labels)))
         LOG.info("Weak F1-score macro averaged: {}".format(np.mean(weak_metric)))
+
+        LOG.info("\n ### Valid synthetic metric ### \n")
+        predictions = get_predictions(crnn, valid_synth_data, many_hot_encoder.decode_strong, pooling_time_ratio,
+                                      save_predictions=None)
+        valid_events_metric, valid_segment_metric = compute_strong_metrics(predictions, valid_synth_df, log=True)
+
+        for event in valid_events_metric.event_label_list:
+            event_results = get_metrics_result_list(valid_events_metric.class_wise[event])
+            per_class_results[event].extend(event_results)
+
+        for event in valid_segment_metric.event_label_list:
+            event_results = get_metrics_result_list(valid_segment_metric.class_wise[event])
+            per_class_results[event].extend(event_results)
+
+        with open(res_classes_fullpath, 'a') as file:
+            for event in many_hot_encoder.labels:
+                results = list(map(lambda s : "{:.3f}".format(s), per_class_results[event]))
+                file.write(';'.join([event, *results, '\n']))
+            file.write('\n')  # next epoch separator
 
         state['model']['state_dict'] = crnn.state_dict()
         state['model_ema']['state_dict'] = crnn_ema.state_dict()
@@ -417,12 +508,15 @@ if __name__ == '__main__':
             model_fname = os.path.join(saved_model_dir, "baseline_epoch_" + str(epoch))
             torch.save(state, model_fname)
 
+        global_valid = valid_events_metric.results_class_wise_average_metrics()['f_measure']['f_measure']
+        global_valid = global_valid + np.mean(weak_metric)
+
+        event_results.append(global_valid)
+        event_results = list(map(lambda s: "{:.3f}".format(s), event_results))
+        with open(res_fullpath, 'a') as file:
+            file.write(';'.join(event_results) +'\n')
+
         if cfg.save_best:
-            # if not no_synthetic:
-            global_valid = valid_events_metric.results_class_wise_average_metrics()['f_measure']['f_measure']
-            global_valid = global_valid + np.mean(weak_metric)
-            # else:
-            #     global_valid = np.mean(weak_metric)
             if save_best_cb.apply(global_valid):
                 model_fname = os.path.join(saved_model_dir, "baseline_best")
                 torch.save(state, model_fname)
@@ -438,4 +532,4 @@ if __name__ == '__main__':
     # Validation
     # ##############
     predicitons_fname = os.path.join(saved_pred_dir, "baseline_validation.csv")
-    test_model(state, cfg.validation,reduced_number_of_data, predicitons_fname)
+    test_model(state, cfg.validation, reduced_number_of_data, predicitons_fname)
