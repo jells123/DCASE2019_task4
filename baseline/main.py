@@ -213,8 +213,10 @@ def add_parser_arguments(parser):
     # Learning config: whether to sort data, use unlabeled samples
     parser.add_argument("-o", '--ordered', dest='sort', action='store_true', default=False,
                         help="Sorting data so as to perform Curriculum Learning.")
-    parser.add_argument("-u", '--skip_unlabeled', dest='skip_unlabeled', action='store_true', default=False,
+    parser.add_argument("-u", '--skip_unlabeled', dest='skip_unlabeled', action='store_true', default=True,
                         help="Skipping large unlabeled audio dataset.")
+    parser.add_argument("-f", '--flatness', dest='use_flatness', action='store_true', default=False,
+                        help="Sort audio files according to spectral flatness.")
 
     # Neural-network related
     parser.add_argument("-c", '--freeze_cnn', dest='freeze_cnn', action='store_true', default=False,
@@ -243,6 +245,7 @@ if __name__ == '__main__':
     download = not f_args.no_download
     sort = f_args.sort
     skip_unlabeled = f_args.skip_unlabeled
+    use_flatness = f_args.use_flatness
 
     freeze_cnn = f_args.freeze_cnn
     freeze_rnn = f_args.freeze_rnn
@@ -256,6 +259,7 @@ if __name__ == '__main__':
     LOG.info("Downloading data = {}".format(download))
     LOG.info("Sorting = {}".format(sort))
     LOG.info("Use unlabeled = {}".format(not skip_unlabeled))
+    LOG.info("Sort according to spectral flatness= {}".format(use_flatness))
 
     add_dir_model_name = "_with_synthetic"
 
@@ -282,11 +286,18 @@ if __name__ == '__main__':
                                     base_feature_dir=os.path.join(cfg.workspace, "dataset", "features"),
                                     save_log_feature=False)
 
-    weak_df = dataset.initialize_and_get_df(cfg.weak, reduced_number_of_data, download=download)
+    if use_flatness:
+        weak_path = cfg.weak_f
+        synthetic_path = cfg.synthetic_f
+    else:
+        weak_path = cfg.weak
+        synthetic_path = cfg.synthetic
+
+    weak_df = dataset.initialize_and_get_df(weak_path, reduced_number_of_data, download=download)
     unlabel_df = dataset.initialize_and_get_df(cfg.unlabel, reduced_number_of_data, download=download)
 
     # Event if synthetic not used for training, used on validation purpose
-    synthetic_df = dataset.initialize_and_get_df(cfg.synthetic, reduced_number_of_data, download=download)
+    synthetic_df = dataset.initialize_and_get_df(synthetic_path, reduced_number_of_data, download=download)
     validation_df = dataset.initialize_and_get_df(cfg.validation, reduced_number_of_data, download=download)
 
     classes = cfg.classes
@@ -319,6 +330,12 @@ if __name__ == '__main__':
         train_weak_df = sort_weak_df(train_weak_df)
         train_synth_df = sort_synthetic_df(train_synth_df)
         # TODO: Research on cc learning, is the validation set ordered accordingly?
+
+    if use_flatness:
+        train_weak_df = train_weak_df.sort_values(by=["Spectral flatness"])
+        train_synth_df = train_synth_df.sort_values(by=["Spectral flatness"])
+        print(train_weak_df.head())
+
 
     train_weak_data = DataLoadDf(train_weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                  transform=transforms)
