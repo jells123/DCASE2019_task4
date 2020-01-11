@@ -456,6 +456,9 @@ if __name__ == '__main__':
 
     res_filename = datetime.now().strftime("%d-%m-%Y_%I-%M-%S") + ".csv"
     LOG.info(f"Saving results using {res_filename}")
+    if not os.path.exists(os.path.join('..', 'results')):
+        os.makedirs(os.path.join('..', 'results'))
+        LOG.info(f"Creating 'results' directory...")
     res_fullpath = os.path.join('..', 'results', res_filename)
     res_columns = ['weak_loss', 'strong_loss', 'consistency_weak_loss', 'consistency_strong_loss']
     map_res_columns = {
@@ -465,7 +468,9 @@ if __name__ == '__main__':
         'consistency_strong_loss': 'Consistency strong',
     }
     with open(res_fullpath, 'w') as file:
+        file.write(str(f_args) + "\n\n") # dump f_args, just in case
         file.write(';'.join([*res_columns, "global_valid"]) + "\n")
+    print(str(f_args) + "\n")
 
     res_classes_filename = "class_" + res_filename
     res_classes_columns = ['class_name', 'weak-F1', 'Nref', 'F', 'Pre', 'Rec', 'Acc', 'Nref_Seg', 'F_Seg', 'Pre_Seg',
