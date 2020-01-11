@@ -213,8 +213,10 @@ def add_parser_arguments(parser):
     # Learning config: whether to sort data, use unlabeled samples
     parser.add_argument("-o", '--ordered', dest='sort', action='store_true', default=False,
                         help="Sorting data so as to perform Curriculum Learning.")
-    parser.add_argument("-u", '--skip_unlabeled', dest='skip_unlabeled', action='store_true', default=False,
+    parser.add_argument("-u", '--skip_unlabeled', dest='skip_unlabeled', action='store_true', default=True,
                         help="Skipping large unlabeled audio dataset.")
+    parser.add_argument("-f", '--flatness', dest='use_flatness', action='store_true', default=False,
+                        help="Sort audio files according to spectral flatness.")
 
     # Neural-network related
     parser.add_argument("-c", '--freeze_cnn', dest='freeze_cnn', action='store_true', default=False,
@@ -243,6 +245,7 @@ if __name__ == '__main__':
     download = not f_args.no_download
     sort = f_args.sort
     skip_unlabeled = f_args.skip_unlabeled
+    use_flatness = f_args.use_flatness
 
     freeze_cnn = f_args.freeze_cnn
     freeze_rnn = f_args.freeze_rnn
@@ -256,6 +259,7 @@ if __name__ == '__main__':
     LOG.info("Downloading data = {}".format(download))
     LOG.info("Sorting = {}".format(sort))
     LOG.info("Use unlabeled = {}".format(not skip_unlabeled))
+    LOG.info("Sort according to spectral flatness= {}".format(use_flatness))
 
     add_dir_model_name = "_with_synthetic"
 
@@ -264,7 +268,33 @@ if __name__ == '__main__':
     else:
         state = None
 
-    store_dir = os.path.join("stored_data", "MeanTeacher" + add_dir_model_name)
+    fname_timestamp = datetime.now().strftime("%d-%m-%Y_%I-%M-%S")
+    res_filename = fname_timestamp + ".csv"
+    LOG.info(f"Saving results using {res_filename}")
+    if not os.path.exists(os.path.join('..', 'results')):
+        os.makedirs(os.path.join('..', 'results'))
+        LOG.info(f"Creating 'results' directory...")
+    res_fullpath = os.path.join('..', 'results', res_filename)
+    res_columns = ['weak_loss', 'strong_loss', 'consistency_weak_loss', 'consistency_strong_loss']
+    map_res_columns = {
+        'weak_loss': 'weak_class_loss',
+        'strong_loss': 'Strong loss',
+        'consistency_weak_loss': 'Consistency weak',
+        'consistency_strong_loss': 'Consistency strong',
+    }
+    with open(res_fullpath, 'w') as file:
+        file.write(str(f_args) + "\n\n")  # dump f_args, just in case
+        file.write(';'.join([*res_columns, "global_valid"]) + "\n")
+    print(str(f_args) + "\n")
+
+    res_classes_filename = "class_" + res_filename
+    res_classes_columns = ['class_name', 'weak-F1', 'Nref', 'F', 'Pre', 'Rec', 'Acc', 'Nref_Seg', 'F_Seg', 'Pre_Seg',
+                           'Rec_Seg', 'Acc_Seg']
+    res_classes_fullpath = os.path.join('..', 'results', res_classes_filename)
+    with open(res_classes_fullpath, 'w') as file:
+        file.write(';'.join(res_classes_columns) + "\n")
+
+    store_dir = os.path.join("stored_data", f"{fname_timestamp}_MeanTeacher")
     saved_model_dir = os.path.join(store_dir, "model")
     saved_pred_dir = os.path.join(store_dir, "predictions")
     create_folder(store_dir)
@@ -282,11 +312,18 @@ if __name__ == '__main__':
                                     base_feature_dir=os.path.join(cfg.workspace, "dataset", "features"),
                                     save_log_feature=False)
 
-    weak_df = dataset.initialize_and_get_df(cfg.weak, reduced_number_of_data, download=download)
+    if use_flatness:
+        weak_path = cfg.weak_f
+        synthetic_path = cfg.synthetic_f
+    else:
+        weak_path = cfg.weak
+        synthetic_path = cfg.synthetic
+
+    weak_df = dataset.initialize_and_get_df(weak_path, reduced_number_of_data, download=download)
     unlabel_df = dataset.initialize_and_get_df(cfg.unlabel, reduced_number_of_data, download=download)
 
     # Event if synthetic not used for training, used on validation purpose
-    synthetic_df = dataset.initialize_and_get_df(cfg.synthetic, reduced_number_of_data, download=download)
+    synthetic_df = dataset.initialize_and_get_df(synthetic_path, reduced_number_of_data, download=download)
     validation_df = dataset.initialize_and_get_df(cfg.validation, reduced_number_of_data, download=download)
 
     classes = cfg.classes
@@ -319,6 +356,12 @@ if __name__ == '__main__':
         train_weak_df = sort_weak_df(train_weak_df)
         train_synth_df = sort_synthetic_df(train_synth_df)
         # TODO: Research on cc learning, is the validation set ordered accordingly?
+
+    if use_flatness:
+        train_weak_df = train_weak_df.sort_values(by=["Spectral flatness"])
+        train_synth_df = train_synth_df.sort_values(by=["Spectral flatness"])
+        print(train_weak_df.head())
+
 
     train_weak_data = DataLoadDf(train_weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                  transform=transforms)
@@ -438,31 +481,6 @@ if __name__ == '__main__':
         if freeze_rnn:
             crnn.freeze_rnn()
             crnn_ema.freeze_rnn()
-
-    res_filename = datetime.now().strftime("%d-%m-%Y_%I-%M-%S") + ".csv"
-    LOG.info(f"Saving results using {res_filename}")
-    if not os.path.exists(os.path.join('..', 'results')):
-        os.makedirs(os.path.join('..', 'results'))
-        LOG.info(f"Creating 'results' directory...")
-    res_fullpath = os.path.join('..', 'results', res_filename)
-    res_columns = ['weak_loss', 'strong_loss', 'consistency_weak_loss', 'consistency_strong_loss']
-    map_res_columns = {
-        'weak_loss': 'weak_class_loss',
-        'strong_loss': 'Strong loss',
-        'consistency_weak_loss': 'Consistency weak',
-        'consistency_strong_loss': 'Consistency strong',
-    }
-    with open(res_fullpath, 'w') as file:
-        file.write(str(f_args) + "\n\n") # dump f_args, just in case
-        file.write(';'.join([*res_columns, "global_valid"]) + "\n")
-    print(str(f_args) + "\n")
-
-    res_classes_filename = "class_" + res_filename
-    res_classes_columns = ['class_name', 'weak-F1', 'Nref', 'F', 'Pre', 'Rec', 'Acc', 'Nref_Seg', 'F_Seg', 'Pre_Seg',
-                           'Rec_Seg', 'Acc_Seg']
-    res_classes_fullpath = os.path.join('..', 'results', res_classes_filename)
-    with open(res_classes_fullpath, 'w') as file:
-        file.write(';'.join(res_classes_columns) + "\n")
 
     # ##############
     # Train

@@ -88,7 +88,7 @@ class DatasetDcase2019Task4:
         # create folder if not exist
         create_folder(self.feature_dir)
 
-    def initialize_and_get_df(self, csv_path, subpart_data=None, download=True):
+    def initialize_and_get_df(self, csv_path, subpart_data=None, download=False):
         """ Initialize the dataset, extract the features dataframes
         Args:
             csv_path: str, csv path in the initial dataset
@@ -166,7 +166,10 @@ class DatasetDcase2019Task4:
             path of the audio directory.
         """
         base_filepath = os.path.splitext(filepath)[0]
-        audio_dir = base_filepath.replace("metadata", "audio")
+        if "metadata" in base_filepath:
+            audio_dir = base_filepath.replace("metadata", "audio")
+        elif "features" in base_filepath:
+            audio_dir = base_filepath.replace("features", "audio")
         if audio_dir.split(os.path.sep)[-2] == 'validation':
             audio_dir = (os.path.sep).join(audio_dir.split(os.path.sep)[:-1])
         audio_dir = os.path.abspath(audio_dir)
@@ -250,6 +253,7 @@ class DatasetDcase2019Task4:
         # TODO: Add signal-to-noise ratio here if applicable to curriculum learning
         t1 = time.time()
         wav_dir = self.get_audio_dir_path_from_meta(csv_audio)
+        print(wav_dir)
         df_meta = self.get_df_from_meta(csv_audio, subpart_data)
         LOG.info("{} Total file number: {}".format(csv_audio, len(df_meta.filename.unique())))
 

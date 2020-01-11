@@ -10,6 +10,9 @@ synthetic = os.path.join('dataset', 'metadata', 'train', 'synthetic.csv')
 validation = os.path.join('dataset', 'metadata', 'validation', 'validation.csv')
 test2018 = os.path.join('dataset', 'metadata', 'validation', 'test_dcase2018.csv')
 eval2018 = os.path.join('dataset', 'metadata', 'validation', 'eval_dcase2018.csv')
+features = os.path.join('dataset', 'features', 'train')
+weak_f = os.path.join('dataset', 'features', 'train', 'weak.csv')
+synthetic_f = os.path.join('dataset', 'features', 'train', 'synthetic.csv')
 
 # config
 # prepare_data

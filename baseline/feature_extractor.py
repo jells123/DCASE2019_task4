@@ -50,8 +50,8 @@ def get_audio_dir_path_from_meta(filepath):
     """
     base_filepath = os.path.splitext(filepath)[0]
     audio_dir = base_filepath.replace("metadata", "audio")
-    if audio_dir.split('/')[-2] == 'validation':
-        audio_dir = '/'.join(audio_dir.split('/')[:-1])
+    if audio_dir.split(os.path.sep)[-2] == 'validation':
+        audio_dir = (os.path.sep).join(audio_dir.split(os.path.sep)[:-1])
     audio_dir = os.path.abspath(audio_dir)
     return audio_dir
 
@@ -65,7 +65,9 @@ def extract_features_from_meta(csv_audio):
     """
     t1 = time.time()
     df_meta = pd.read_csv(csv_audio, header=0, sep="\t")
-    out_path = os.path.join(cfg.features, "features.csv")
+    csv_filename = csv_audio.rsplit('\\', 1)[-1]
+    out_path = os.path.join(cfg.workspace, cfg.features, csv_filename)
+    LOG.info("Printing features to {} ".format(out_path))
     flatness_list = []
     for ind, wav_name in enumerate(df_meta.filename):
         if ind % 500 == 0:
@@ -81,12 +83,8 @@ def extract_features_from_meta(csv_audio):
             if audio.shape[0] == 0:
                 print("File %s is corrupted!" % wav_path)
             else:
-                print(ind)
                 flatness_list.append(calculate_other_features(audio))
-
-    print(flatness_list)
-    print(df_meta.shape[0])
-    print(len(flatness_list))
+    LOG.info("Done")
     df_meta["Spectral flatness"] = flatness_list
     df_meta.to_csv(out_path, sep='\t')
     return df_meta.reset_index(drop=True)
@@ -94,10 +92,10 @@ def extract_features_from_meta(csv_audio):
 
 if __name__ == '__main__':
 
-    extract_features_from_meta(os.path.join(cfg.workspace, cfg.validation))
+    # extract_features_from_meta(os.path.join(cfg.workspace, cfg.validation))
     # extract_features_from_meta(os.path.join(cfg.workspace, cfg.unlabel))
-    # extract_features_from_meta(os.path.join(cfg.workspace, cfg.synthetic))
-    # extract_features_from_meta(os.path.join(cfg.workspace, cfg.weak))
+    extract_features_from_meta(os.path.join(cfg.workspace, cfg.synthetic))
+    extract_features_from_meta(os.path.join(cfg.workspace, cfg.weak))
 
 
 
