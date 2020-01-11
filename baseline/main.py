@@ -275,12 +275,13 @@ if __name__ == '__main__':
         os.makedirs(os.path.join('..', 'results'))
         LOG.info(f"Creating 'results' directory...")
     res_fullpath = os.path.join('..', 'results', res_filename)
-    res_columns = ['weak_loss', 'strong_loss', 'consistency_weak_loss', 'consistency_strong_loss']
+    res_columns = ['weak_loss', 'strong_loss', 'consistency_weak_loss', 'consistency_strong_loss', 'loss']
     map_res_columns = {
         'weak_loss': 'weak_class_loss',
         'strong_loss': 'Strong loss',
         'consistency_weak_loss': 'Consistency weak',
         'consistency_strong_loss': 'Consistency strong',
+        'loss': 'Loss'
     }
     with open(res_fullpath, 'w') as file:
         file.write(str(f_args) + "\n\n")  # dump f_args, just in case
@@ -494,7 +495,7 @@ if __name__ == '__main__':
 
         meters = train(training_data, crnn, optimizer, epoch, ema_model=crnn_ema, weak_mask=weak_mask,
                        strong_mask=strong_mask)
-        event_results = [str(meters[map_res_columns[m]].val) for m in res_columns]
+        overall_results = [meters[map_res_columns[m]].val for m in res_columns]
 
         crnn = crnn.eval()
 
@@ -538,10 +539,10 @@ if __name__ == '__main__':
         global_valid = valid_events_metric.results_class_wise_average_metrics()['f_measure']['f_measure']
         global_valid = global_valid + np.mean(weak_metric)
 
-        event_results.append(global_valid)
-        event_results = list(map(lambda s: "{:.3f}".format(s), event_results))
+        overall_results.append(global_valid)
+        overall_results = list(map(lambda s: "{:.3f}".format(s), overall_results))
         with open(res_fullpath, 'a') as file:
-            file.write(';'.join(event_results) + '\n')
+            file.write(';'.join(overall_results) + '\n')
 
         if cfg.save_best:
             if save_best_cb.apply(global_valid):
