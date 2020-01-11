@@ -268,7 +268,7 @@ if __name__ == '__main__':
     else:
         state = None
 
-    fname_timestamp = datetime.now().strftime("%d-%m-%Y_%I-%M-%S")
+    fname_timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     res_filename = fname_timestamp + ".csv"
     LOG.info(f"Saving results using {res_filename}")
     if not os.path.exists(os.path.join('..', 'results')):
