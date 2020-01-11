@@ -191,10 +191,12 @@ def sort_synthetic_df(synthetic_df):
 
 
 def get_metrics_result_list(event_metric):
-    precision = event_metric['Ntp'] / (event_metric['Ntp'] + event_metric['Nfp'] + 1e-15)
-    recall = event_metric['Ntp'] / (event_metric['Ntp'] + event_metric['Nfn'] + 1e-15)
-    f1 = 2 * (precision * recall) / (precision + recall + 1e-15)
-    acc = (event_metric['Ntp'] + event_metric['Ntn']) / event_metric['Nref']
+    precision = event_metric['Ntp'] / (event_metric['Ntp'] + event_metric['Nfp']) if event_metric['Ntp'] + event_metric[
+        'Nfp'] > 0 else 0.0
+    recall = event_metric['Ntp'] / (event_metric['Ntp'] + event_metric['Nfn']) if event_metric['Ntp'] + event_metric[
+        'Nfn'] > 0 else 0.0
+    f1 = 2 * (precision * recall) / (precision + recall) if precision + recall > 0 else 0.0
+    acc = (event_metric['Ntp'] + event_metric['Ntn']) / event_metric['Nref'] if event_metric['Nref'] > 0 else 0.0
     results = [event_metric['Nref'], f1, precision, recall, acc]
     return results
 
@@ -495,7 +497,7 @@ if __name__ == '__main__':
 
         with open(res_classes_fullpath, 'a') as file:
             for event in many_hot_encoder.labels:
-                results = list(map(lambda s : "{:.3f}".format(s), per_class_results[event]))
+                results = list(map(lambda s: "{:.3f}".format(s), per_class_results[event]))
                 file.write(';'.join([event, *results, '\n']))
             file.write('\n')  # next epoch separator
 
@@ -514,7 +516,7 @@ if __name__ == '__main__':
         event_results.append(global_valid)
         event_results = list(map(lambda s: "{:.3f}".format(s), event_results))
         with open(res_fullpath, 'a') as file:
-            file.write(';'.join(event_results) +'\n')
+            file.write(';'.join(event_results) + '\n')
 
         if cfg.save_best:
             if save_best_cb.apply(global_valid):
