@@ -439,6 +439,9 @@ if __name__ == '__main__':
 
     res_filename = datetime.now().strftime("%d-%m-%Y_%I-%M-%S") + ".csv"
     LOG.info(f"Saving results using {res_filename}")
+    if not os.path.exists(os.path.join('..', 'results')):
+        os.makedirs(os.path.join('..', 'results'))
+        LOG.info(f"Creating 'results' directory...")
     res_fullpath = os.path.join('..', 'results', res_filename)
     res_columns = ['weak_loss', 'strong_loss', 'consistency_weak_loss', 'consistency_strong_loss']
     map_res_columns = {
