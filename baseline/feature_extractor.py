@@ -6,12 +6,13 @@ import pandas as pd
 from utils.utils import read_audio
 import librosa
 import numpy as np
+from deltasigma import calculateSNR
 
 
 def calculate_other_features(audio):
     """
     Calculate  spectral features other than melspectrogram from raw audio waveform
-    Note: The parameters of the spectrograms are in the config.py file.
+    Note: The parameters of the spectrograms are in the csonfig.py file.
     Args:
         audio : numpy.array, raw waveform to compute the spectrogram
 
@@ -21,6 +22,7 @@ def calculate_other_features(audio):
     """
     # Compute spectrogram
     ham_win = np.hamming(cfg.n_window)
+    han_win = np.hanning(cfg.n_window)
 
     spec = librosa.stft(
         audio,
@@ -33,9 +35,19 @@ def calculate_other_features(audio):
     flatness = librosa.feature.spectral_flatness(
         S=np.abs(spec)
     )
+
+    fft = librosa.stft(
+        audio,
+        n_fft=cfg.n_window,
+        hop_length=cfg.hop_length,
+        window=han_win,
+        center=True,
+        pad_mode='reflect'
+    )
     flatness_array = librosa.amplitude_to_db(flatness)
     flatness = np.mean(flatness_array)
-    return flatness
+    snr_han = calculateSNR(fft, 1)
+    return flatness, snr_han
 
 
 def get_audio_dir_path_from_meta(filepath):
@@ -65,10 +77,11 @@ def extract_features_from_meta(csv_audio):
     """
     t1 = time.time()
     df_meta = pd.read_csv(csv_audio, header=0, sep="\t")
-    csv_filename = csv_audio.rsplit('\\', 1)[-1]
+    csv_filename = csv_audio.split(os.path.sep)[-1]
     out_path = os.path.join(cfg.workspace, cfg.features, csv_filename)
     LOG.info("Printing features to {} ".format(out_path))
     flatness_list = []
+    snr_list = []
     for ind, wav_name in enumerate(df_meta.filename):
         if ind % 500 == 0:
             LOG.debug(ind)
@@ -83,9 +96,12 @@ def extract_features_from_meta(csv_audio):
             if audio.shape[0] == 0:
                 print("File %s is corrupted!" % wav_path)
             else:
-                flatness_list.append(calculate_other_features(audio))
+                flatness, snr = calculate_other_features(audio)
+                flatness_list.append(flatness)
+                snr_list.append(snr)
     LOG.info("Done")
     df_meta["Spectral flatness"] = flatness_list
+    df_meta["SNR"] = snr_list
     df_meta.to_csv(out_path, sep='\t')
     return df_meta.reset_index(drop=True)
 
