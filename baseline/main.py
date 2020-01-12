@@ -184,8 +184,10 @@ def get_metrics_result_list(event_metric):
 
 
 def construct_training_data(epoch_num, weak_df, synth_df, shuffle, scaler=None):
-    weak_data = DataLoadDf(weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df)
-    synth_data = DataLoadDf(synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df)
+    transforms = get_transforms(cfg.max_frames)
+
+    weak_data = DataLoadDf(weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df, transform=transforms)
+    synth_data = DataLoadDf(synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df, transform=transforms)
 
     list_dataset = [weak_data, synth_data]
     if cfg.weak_part_size and cfg.strong_part_size:
@@ -251,6 +253,36 @@ def add_parser_arguments(parser):
     parser.add_argument('--skip_dense', dest='skip_dense', action='store_true', default=False,
                         help="Not loading Dense layers weights.")
     return parser
+
+
+SIMPLE_CLASSES = ['Speech', 'Alarm_bell_ringing', 'Cat', 'Blender', 'Electric_shaver_toothbrush']
+HARD_CLASSES = ['Dog', 'Frying', 'Dishes', 'Vacuum_cleaner', 'Running_water']
+
+
+def select_classes_for_epoch_weak(epoch, train_weak_df, th):
+    epoch = epoch + 1  # relative to numbers of elements in arrays, original numbering 0, 1, 2...
+    allowed_classes = SIMPLE_CLASSES.copy()
+    if epoch > th:
+        idx = 0
+        while len(allowed_classes) < epoch and idx < len(HARD_CLASSES):
+            allowed_classes.append(HARD_CLASSES[idx])
+            idx += 1
+    df = train_weak_df[train_weak_df['event_labels'].apply(
+        lambda x: all([label in allowed_classes for label in x.split(',')])
+    )]
+    return df
+
+
+def select_classes_for_epoch_synth(epoch, train_synth_df, th):
+    epoch = epoch + 1  # relative to numbers of elements in arrays, original numbering 0, 1, 2...
+    allowed_classes = SIMPLE_CLASSES.copy()
+    if epoch > th:
+        idx = 0
+        while len(allowed_classes) < epoch and idx < len(HARD_CLASSES):
+            allowed_classes.append(HARD_CLASSES[idx])
+            idx += 1
+    df = train_synth_df[train_synth_df['event_label'].apply(lambda x: x in allowed_classes)]
+    return df
 
 
 if __name__ == '__main__':
@@ -326,9 +358,8 @@ if __name__ == '__main__':
     store_dir = os.path.join("stored_data", f"{fname_timestamp}_MeanTeacher")
     saved_model_dir = os.path.join(store_dir, "model")
     saved_pred_dir = os.path.join(store_dir, "predictions")
-    create_folder(store_dir)
-    create_folder(saved_model_dir)
-    create_folder(saved_pred_dir)
+    for folder_name in [store_dir, saved_model_dir, saved_pred_dir]:
+        create_folder(folder_name)
 
     if state:
         pooling_time_ratio = state["pooling_time_ratio"]
@@ -544,9 +575,11 @@ if __name__ == '__main__':
         crnn, crnn_ema = to_cuda_if_available([crnn, crnn_ema])
 
         if sort_class:
-            training_data, weak_mask, strong_mask = construct_training_data(epoch, train_weak_df, train_synth_df,
+            th = 5 if state else 10
+            weak_df = select_classes_for_epoch_weak(epoch, train_weak_df, th)
+            synth_df = select_classes_for_epoch_synth(epoch, train_synth_df, th)
+            training_data, weak_mask, strong_mask = construct_training_data(epoch, weak_df, synth_df,
                                                                             shuffle=do_shuffle)
-
         meters = train(training_data, crnn, optimizer, epoch, ema_model=crnn_ema, weak_mask=weak_mask,
                        strong_mask=strong_mask)
         overall_results = [meters[map_res_columns[m]].val for m in res_columns]
