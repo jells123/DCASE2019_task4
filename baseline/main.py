@@ -212,6 +212,52 @@ def sort_synthetic_df(synthetic_df):
     return synthetic_df
 
 
+def sort_synthetic_df_by_events_overlap(synthetic_df):
+    # SPAGHETTI ITALIANO
+    overlap_df = synthetic_df.sort_values(by=['filename', 'onset', 'offset']).reset_index(drop=True)
+
+    overlap_df['prev_filename'] = overlap_df.shift(1)['filename']
+
+    overlap_df['space_between_segments'] = overlap_df['onset'] - overlap_df.shift(1)['offset']
+    overlap_df['space_between_offsets'] = overlap_df['offset'] - overlap_df.shift(1)['offset']
+
+    overlap_df['segment_width'] = overlap_df['offset'] - overlap_df['onset']
+    overlap_df['segments_ratio'] = overlap_df['segment_width'] / overlap_df.shift(1)['segment_width']
+
+    overlap_df.loc[overlap_df['filename'] != overlap_df['prev_filename'], 'space_between_segments'] = np.nan
+    overlap_df.loc[overlap_df['filename'] != overlap_df['prev_filename'], 'space_between_offsets'] = np.nan
+
+    # assign 0, 1, 2 numbers for separate cases for convenience :)
+    overlap_df['overlaps'] = 0
+    overlap_df.loc[overlap_df['space_between_segments'] < 0, 'overlaps'] = 1
+    overlap_df.loc[overlap_df['space_between_offsets'] < 0, 'overlaps'] = 2
+
+    overlap_df.loc[(overlap_df.shift(-1)['overlaps'] == 2) & (
+            overlap_df['filename'] == overlap_df['prev_filename']), 'overlaps'] = 2
+
+    # 1st case: no overlapping
+    no_overlap = overlap_df[overlap_df['overlaps'] == 0]
+    no_overlap = no_overlap.sample(frac=1)
+
+    # 2nd case: one event overlaps another
+    medium_overlap = overlap_df[overlap_df['overlaps'] == 1]
+    medium_overlap = medium_overlap.sort_values(by='space_between_segments', ascending=False, na_position='first')
+
+    # 3rd case: there is an event inside another
+    high_overlap = overlap_df[overlap_df['overlaps'] == 2]
+    high_overlap.loc[(high_overlap['segments_ratio'] > 1.0)
+                     & (high_overlap['filename'] == high_overlap['prev_filename']), 'segments_ratio'] = \
+        high_overlap.shift(-1)['segments_ratio']
+
+    # select original columns only
+    no_overlap = no_overlap[train_synth_df.columns]
+    medium_overlap = medium_overlap[train_synth_df.columns]
+    high_overlap = high_overlap[train_synth_df.columns]
+
+    result = pd.concat([no_overlap, medium_overlap, high_overlap]).reset_index()
+    return result
+
+
 def get_metrics_result_list(event_metric):
     precision = event_metric['Ntp'] / (event_metric['Ntp'] + event_metric['Nfp']) if event_metric['Ntp'] + event_metric[
         'Nfp'] > 0 else 0.0
@@ -241,6 +287,8 @@ def add_parser_arguments(parser):
                         help="Sort audio files according to spectral flatness.")
     parser.add_argument('--snr', dest='use_snr', action='store_true', default=False,
                         help="Sort audio files according to signal-to-noise ratio.")
+    parser.add_argument('--sort_overlap', dest='sort_overlap', action='store_true', default=False,
+                        help="Sort weak data by class counts, and synthetic strong data by overlapping events difficulty.")
 
     # Neural-network related
     parser.add_argument("-c", '--freeze_cnn', dest='freeze_cnn', action='store_true', default=False,
@@ -267,10 +315,14 @@ if __name__ == '__main__':
     reduced_number_of_data = f_args.subpart_data
     model_path = f_args.model_path
     download = not f_args.no_download
-    sort = f_args.sort
     skip_unlabeled = f_args.skip_unlabeled
+
+    # Only one of the below can be used at a time
+    sort = f_args.sort
+    sort_overlap = f_args.sort_overlap
     use_flatness = f_args.use_flatness
     use_snr = f_args.use_snr
+    assert sum([sort, sort_overlap, use_flatness, use_snr]) <= 1
 
     freeze_cnn = f_args.freeze_cnn
     freeze_rnn = f_args.freeze_rnn
@@ -394,11 +446,16 @@ if __name__ == '__main__':
     if sort:
         train_weak_df = sort_weak_df(train_weak_df)
         train_synth_df = sort_synthetic_df(train_synth_df)
-        # TODO: Research on cc learning, is the validation set ordered accordingly?
+
+    if sort_overlap:
+        train_weak_df = sort_weak_df(train_weak_df)
+        train_synth_df = sort_synthetic_df_by_events_overlap(train_synth_df)
+
     if use_flatness:
         # sort ascending - the values are from -inf to 0 where -inf is the perfect sound and 0 is a perfect white noise
         train_weak_df = train_weak_df.sort_values(by=["Spectral flatness"])
         train_synth_df = train_synth_df.sort_values(by=["Spectral flatness"])
+
     if use_snr:
         # sort descending - the values above 0 dB mean more signal than noise
         train_weak_df = train_weak_df.sort_values(by=["SNR"], ascending=False)
@@ -442,7 +499,7 @@ if __name__ == '__main__':
     concat_dataset = ConcatDataset(list_dataset)
     sampler = MultiStreamBatchSampler(concat_dataset,
                                       batch_sizes=batch_sizes,
-                                      shuffle=not(sort or use_flatness or use_snr))
+                                      shuffle=not (sort or use_flatness or use_snr))
 
     training_data = DataLoader(concat_dataset, batch_sampler=sampler)
 
