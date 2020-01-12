@@ -1,3 +1,0 @@
-Namespace(freeze_cnn=False, freeze_rnn=False, model_path=None, no_download=False, skip_cnn=False, skip_dense=False, skip_rnn=False, skip_unlabeled=True, sort=False, subpart_data=None, use_flatness=True)
-
-weak_loss;strong_loss;consistency_weak_loss;consistency_strong_loss;global_valid
