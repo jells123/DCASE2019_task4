@@ -28,57 +28,9 @@ import config as cfg
 from utils.utils import ManyHotEncoder, create_folder, SaveBest, to_cuda_if_available, weights_init, \
     get_transforms, AverageMeterSet
 from utils.Logger import LOG
+from utils.analysis import check_class_distribution, generate_graphs
 from datetime import datetime
-import matplotlib.pyplot as plt
-
-
-def generate_graphs(metrics_filepath, epoch_filepath):
-    dirpath = os.path.splitext(metrics_filepath)[0]
-    if not os.path.exists(dirpath):
-        os.mkdir(dirpath)
-
-    df = pd.read_csv(metrics_filepath, sep=";")
-    del df["Acc_Seg"]
-    df.columns = ['weak-F1', 'Nref', "F", "Pre", "Rec", "Acc", "Nref_Seg", "F_seg", "Pre_Seg", "Rec_Seg", "Acc_Seg"]
-    for column in df.columns:
-        fig, ax = plt.subplots(figsize=(10, 7))
-        ax.set(xlabel="Epoch", ylabel=column)
-        pl = df.groupby(df.index)[column].plot(legend=True,
-                                               ax=ax,
-                                               use_index=False,
-                                               title="{} values for each epoch".format(column))
-        plt.savefig(os.path.join(dirpath, column))
-
-    dirpath = os.path.splitext(epoch_filepath)[0]
-    if not os.path.exists(dirpath):
-        os.mkdir(dirpath)
-    df2 = pd.read_csv(epoch_filepath, sep=";", skiprows=2)
-    for column in df2.columns:
-        fig, ax = plt.subplots(figsize=(10, 7))
-        ax.set(xlabel="Epoch", ylabel=column)
-        pl = df2.plot(y=column,
-                      use_index=True,
-                      ax=ax,
-                      title="{} values for each epoch".format(column),
-                      legend=False)
-        plt.savefig(os.path.join(dirpath, column))
-
-
-def check_class_distribution(df, csv):
-    filename = csv.rsplit(os.path.sep)[-1]
-    counts = []
-    if csv == cfg.weak:
-        all_configurations = df["event_labels"].value_counts()
-        for cl in cfg.classes:
-            counts.append(df.event_labels.str.count(cl).sum())
-    else:
-        all_configurations = df["event_label"].value_counts()
-        for cl in cfg.classes:
-            counts.append(df.event_label.str.count(cl).sum())
-
-    all_configurations.to_csv(os.path.join(cfg.workspace, cfg.features, "class_count", "all" + filename), header=True)
-    occurances = pd.Series(counts, index=cfg.classes)
-    occurances.to_csv(os.path.join(cfg.workspace, cfg.features, "class_count", filename), header=True)
+from cc_learning import sort_synthetic_df, sort_synthetic_df_by_events_overlap, sort_weak_df
 
 
 def adjust_learning_rate(optimizer, rampup_value, rampdown_value):
@@ -220,77 +172,6 @@ def train(train_loader, model, optimizer, epoch, ema_model=None, weak_mask=None,
     return meters
 
 
-def sort_weak_df(weak_df):
-    # shuffle first
-    weak_df = weak_df.sample(frac=1)
-    # sort by classes per file counts
-    weak_df['event_labels_count'] = weak_df['event_labels'].apply(lambda x: x.count(','))
-    weak_df = weak_df.sort_values(by='event_labels_count', ascending=True)
-    # bring df back to original state
-    weak_df = weak_df.reset_index(drop=True)
-    weak_df = weak_df.drop(columns='event_labels_count')
-    return weak_df
-
-
-def sort_synthetic_df(synthetic_df):
-    # shuffle first
-    synthetic_df = synthetic_df.sample(frac=1)
-    # sort by classes per file counts
-    label_counts_df = synthetic_df[['filename', 'event_label']].groupby('filename').count().rename(
-        columns={"event_label": "event_labels_count"})
-    synthetic_df = synthetic_df.join(label_counts_df, on='filename', how='outer')
-    # bring df back to original state
-    synthetic_df = synthetic_df.sort_values(by='event_labels_count', ascending=True)
-    synthetic_df = synthetic_df.drop(columns='event_labels_count')
-    return synthetic_df
-
-
-def sort_synthetic_df_by_events_overlap(synthetic_df):
-    # SPAGHETTI ITALIANO
-    overlap_df = synthetic_df.sort_values(by=['filename', 'onset', 'offset']).reset_index(drop=True)
-
-    overlap_df['prev_filename'] = overlap_df.shift(1)['filename']
-
-    overlap_df['space_between_segments'] = overlap_df['onset'] - overlap_df.shift(1)['offset']
-    overlap_df['space_between_offsets'] = overlap_df['offset'] - overlap_df.shift(1)['offset']
-
-    overlap_df['segment_width'] = overlap_df['offset'] - overlap_df['onset']
-    overlap_df['segments_ratio'] = overlap_df['segment_width'] / overlap_df.shift(1)['segment_width']
-
-    overlap_df.loc[overlap_df['filename'] != overlap_df['prev_filename'], 'space_between_segments'] = np.nan
-    overlap_df.loc[overlap_df['filename'] != overlap_df['prev_filename'], 'space_between_offsets'] = np.nan
-
-    # assign 0, 1, 2 numbers for separate cases for convenience :)
-    overlap_df['overlaps'] = 0
-    overlap_df.loc[overlap_df['space_between_segments'] < 0, 'overlaps'] = 1
-    overlap_df.loc[overlap_df['space_between_offsets'] < 0, 'overlaps'] = 2
-
-    overlap_df.loc[(overlap_df.shift(-1)['overlaps'] == 2) & (
-            overlap_df['filename'] == overlap_df['prev_filename']), 'overlaps'] = 2
-
-    # 1st case: no overlapping
-    no_overlap = overlap_df[overlap_df['overlaps'] == 0]
-    no_overlap = no_overlap.sample(frac=1)
-
-    # 2nd case: one event overlaps another
-    medium_overlap = overlap_df[overlap_df['overlaps'] == 1]
-    medium_overlap = medium_overlap.sort_values(by='space_between_segments', ascending=False, na_position='first')
-
-    # 3rd case: there is an event inside another
-    high_overlap = overlap_df[overlap_df['overlaps'] == 2]
-    high_overlap.loc[(high_overlap['segments_ratio'] > 1.0)
-                     & (high_overlap['filename'] == high_overlap['prev_filename']), 'segments_ratio'] = \
-        high_overlap.shift(-1)['segments_ratio']
-
-    # select original columns only
-    no_overlap = no_overlap[train_synth_df.columns]
-    medium_overlap = medium_overlap[train_synth_df.columns]
-    high_overlap = high_overlap[train_synth_df.columns]
-
-    result = pd.concat([no_overlap, medium_overlap, high_overlap]).reset_index()
-    return result
-
-
 def get_metrics_result_list(event_metric):
     precision = event_metric['Ntp'] / (event_metric['Ntp'] + event_metric['Nfp']) if event_metric['Ntp'] + event_metric[
         'Nfp'] > 0 else 0.0
@@ -300,6 +181,40 @@ def get_metrics_result_list(event_metric):
     acc = (event_metric['Ntp'] + event_metric['Ntn']) / event_metric['Nref'] if event_metric['Nref'] > 0 else 0.0
     results = [event_metric['Nref'], f1, precision, recall, acc]
     return results
+
+
+def construct_training_data(epoch_num, weak_df, synth_df, shuffle, scaler=None):
+    transforms = get_transforms(cfg.max_frames)
+
+    weak_data = DataLoadDf(weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df, transform=transforms)
+    synth_data = DataLoadDf(synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df, transform=transforms)
+
+    list_dataset = [weak_data, synth_data]
+    if cfg.weak_part_size and cfg.strong_part_size:
+        batch_sizes = [cfg.weak_part_size, cfg.strong_part_size]
+        strong_mask = slice(cfg.weak_part_size, cfg.batch_size)
+    else:
+        batch_sizes = [cfg.batch_size // 2, cfg.batch_size // 2]
+        strong_mask = slice(cfg.batch_size // 2, cfg.batch_size)
+
+    # Assume weak data is always the first one
+    weak_mask = slice(batch_sizes[0])
+
+    if not scaler:
+        scaler = Scaler()
+        scaler.calculate_scaler(ConcatDataset(list_dataset))
+        LOG.debug(scaler.mean_)
+
+    transforms = get_transforms(cfg.max_frames, scaler, augment_type="noise")
+    for i in range(len(list_dataset)):
+        list_dataset[i].set_transform(transforms)
+
+    concat_dataset = ConcatDataset(list_dataset)
+    sampler = MultiStreamBatchSampler(concat_dataset,
+                                      batch_sizes=batch_sizes,
+                                      shuffle=shuffle)
+    training_data = DataLoader(concat_dataset, batch_sampler=sampler)
+    return training_data, weak_mask, strong_mask
 
 
 def add_parser_arguments(parser):
@@ -322,6 +237,8 @@ def add_parser_arguments(parser):
                         help="Sort audio files according to signal-to-noise ratio.")
     parser.add_argument('--sort_overlap', dest='sort_overlap', action='store_true', default=False,
                         help="Sort weak data by class counts, and synthetic strong data by overlapping events difficulty.")
+    parser.add_argument('--sort_class', dest='sort_class', action='store_true', default=False,
+                        help="Sort by class difficulties, based on initial training performance using shuffled data.")
 
     # Neural-network related
     parser.add_argument("-c", '--freeze_cnn', dest='freeze_cnn', action='store_true', default=False,
@@ -336,6 +253,36 @@ def add_parser_arguments(parser):
     parser.add_argument('--skip_dense', dest='skip_dense', action='store_true', default=False,
                         help="Not loading Dense layers weights.")
     return parser
+
+
+SIMPLE_CLASSES = ['Speech', 'Alarm_bell_ringing', 'Cat', 'Blender', 'Electric_shaver_toothbrush']
+HARD_CLASSES = ['Dog', 'Frying', 'Dishes', 'Vacuum_cleaner', 'Running_water']
+
+
+def select_classes_for_epoch_weak(epoch, train_weak_df, th):
+    epoch = epoch + 1  # relative to numbers of elements in arrays, original numbering 0, 1, 2...
+    allowed_classes = SIMPLE_CLASSES.copy()
+    if epoch > th:
+        idx = 0
+        while len(allowed_classes) < epoch and idx < len(HARD_CLASSES):
+            allowed_classes.append(HARD_CLASSES[idx])
+            idx += 1
+    df = train_weak_df[train_weak_df['event_labels'].apply(
+        lambda x: all([label in allowed_classes for label in x.split(',')])
+    )]
+    return df.sample(frac=1)
+
+
+def select_classes_for_epoch_synth(epoch, train_synth_df, th):
+    epoch = epoch + 1  # relative to numbers of elements in arrays, original numbering 0, 1, 2...
+    allowed_classes = SIMPLE_CLASSES.copy()
+    if epoch > th:
+        idx = 0
+        while len(allowed_classes) < epoch and idx < len(HARD_CLASSES):
+            allowed_classes.append(HARD_CLASSES[idx])
+            idx += 1
+    df = train_synth_df[train_synth_df['event_label'].apply(lambda x: x in allowed_classes)]
+    return df.sample(frac=1)
 
 
 if __name__ == '__main__':
@@ -353,9 +300,11 @@ if __name__ == '__main__':
     # Only one of the below can be used at a time
     sort = f_args.sort
     sort_overlap = f_args.sort_overlap
+    sort_class = f_args.sort_class
     use_flatness = f_args.use_flatness
     use_snr = f_args.use_snr
-    assert sum([sort, sort_overlap, use_flatness, use_snr]) <= 1
+    assert sum([sort, sort_overlap, sort_class, use_flatness, use_snr]) <= 1
+    do_shuffle = not (sort or sort_overlap or sort_class or use_flatness or use_snr)
 
     freeze_cnn = f_args.freeze_cnn
     freeze_rnn = f_args.freeze_rnn
@@ -409,9 +358,8 @@ if __name__ == '__main__':
     store_dir = os.path.join("stored_data", f"{fname_timestamp}_MeanTeacher")
     saved_model_dir = os.path.join(store_dir, "model")
     saved_pred_dir = os.path.join(store_dir, "predictions")
-    create_folder(store_dir)
-    create_folder(saved_model_dir)
-    create_folder(saved_pred_dir)
+    for folder_name in [store_dir, saved_model_dir, saved_pred_dir]:
+        create_folder(folder_name)
 
     if state:
         pooling_time_ratio = state["pooling_time_ratio"]
@@ -420,6 +368,14 @@ if __name__ == '__main__':
     # ##############
     # DATA
     # ##############
+
+    transforms = get_transforms(cfg.max_frames)
+    classes = cfg.classes
+    if state:
+        many_hot_encoder = ManyHotEncoder.load_state_dict(state["many_hot_encoder"])
+    else:
+        many_hot_encoder = ManyHotEncoder(classes, n_frames=cfg.max_frames // pooling_time_ratio)
+
     dataset = DatasetDcase2019Task4(cfg.workspace,
                                     base_feature_dir=os.path.join(cfg.workspace, "dataset", "features"),
                                     save_log_feature=False)
@@ -440,20 +396,12 @@ if __name__ == '__main__':
         unlabel_path = cfg.unlabel
 
     weak_df = dataset.initialize_and_get_df(weak_path, reduced_number_of_data, download=download)
-    unlabel_df = dataset.initialize_and_get_df(unlabel_path, reduced_number_of_data, download=download)
+    if not skip_unlabeled:
+        unlabel_df = dataset.initialize_and_get_df(unlabel_path, reduced_number_of_data, download=download)
 
     # Event if synthetic not used for training, used on validation purpose
     synthetic_df = dataset.initialize_and_get_df(synthetic_path, reduced_number_of_data, download=download)
     validation_df = dataset.initialize_and_get_df(cfg.validation, reduced_number_of_data, download=download)
-
-    classes = cfg.classes
-    if state:
-        many_hot_encoder = ManyHotEncoder.load_state_dict(state["many_hot_encoder"])
-    else:
-        many_hot_encoder = ManyHotEncoder(classes, n_frames=cfg.max_frames // pooling_time_ratio)
-
-    # maybe use scaler here?
-    transforms = get_transforms(cfg.max_frames)
 
     # Divide weak in train and valid
     train_weak_df = weak_df.sample(frac=0.8, random_state=26)
@@ -496,8 +444,9 @@ if __name__ == '__main__':
 
     train_weak_data = DataLoadDf(train_weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                  transform=transforms)
-    unlabel_data = DataLoadDf(unlabel_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
-                              transform=transforms)
+    if not skip_unlabeled:
+        unlabel_data = DataLoadDf(unlabel_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
+                                  transform=transforms)
     train_synth_data = DataLoadDf(train_synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                   transform=transforms)
 
@@ -522,7 +471,6 @@ if __name__ == '__main__':
         scaler.load_state_dict(state["scaler"])
     else:
         scaler.calculate_scaler(ConcatDataset(list_dataset))
-
     LOG.debug(scaler.mean_)
 
     transforms = get_transforms(cfg.max_frames, scaler, augment_type="noise")
@@ -532,7 +480,7 @@ if __name__ == '__main__':
     concat_dataset = ConcatDataset(list_dataset)
     sampler = MultiStreamBatchSampler(concat_dataset,
                                       batch_sizes=batch_sizes,
-                                      shuffle=not (sort or use_flatness or use_snr))
+                                      shuffle=do_shuffle)
 
     training_data = DataLoader(concat_dataset, batch_sampler=sampler)
 
@@ -587,7 +535,6 @@ if __name__ == '__main__':
         else:
             NotImplementedError("Only models trained with Adam optimizer supported for now")
 
-    bce_loss = nn.BCELoss()  # ? unused ?
     if not state:
         state = {
             'model': {"name": crnn.__class__.__name__,
@@ -627,6 +574,12 @@ if __name__ == '__main__':
 
         crnn, crnn_ema = to_cuda_if_available([crnn, crnn_ema])
 
+        if sort_class:
+            th = 5
+            weak_df = select_classes_for_epoch_weak(epoch, train_weak_df, th)
+            synth_df = select_classes_for_epoch_synth(epoch, train_synth_df, th)
+            training_data, weak_mask, strong_mask = construct_training_data(epoch, weak_df, synth_df,
+                                                                            shuffle=do_shuffle)
         meters = train(training_data, crnn, optimizer, epoch, ema_model=crnn_ema, weak_mask=weak_mask,
                        strong_mask=strong_mask)
         overall_results = [meters[map_res_columns[m]].val for m in res_columns]
@@ -661,7 +614,6 @@ if __name__ == '__main__':
                 file.write(';'.join([event, *results, '\n']))
             file.write('\n')  # next epoch separator
 
-
         state['model']['state_dict'] = crnn.state_dict()
         state['model_ema']['state_dict'] = crnn_ema.state_dict()
         state['optimizer']['state_dict'] = optimizer.state_dict()
@@ -683,8 +635,6 @@ if __name__ == '__main__':
             if save_best_cb.apply(global_valid):
                 model_fname = os.path.join(saved_model_dir, "baseline_best")
                 torch.save(state, model_fname)
-
-
 
     if cfg.save_best:
         model_fname = os.path.join(saved_model_dir, "baseline_best")
