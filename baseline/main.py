@@ -270,7 +270,7 @@ def select_classes_for_epoch_weak(epoch, train_weak_df, th):
     df = train_weak_df[train_weak_df['event_labels'].apply(
         lambda x: all([label in allowed_classes for label in x.split(',')])
     )]
-    return df
+    return df.sample(frac=1)
 
 
 def select_classes_for_epoch_synth(epoch, train_synth_df, th):
@@ -282,7 +282,7 @@ def select_classes_for_epoch_synth(epoch, train_synth_df, th):
             allowed_classes.append(HARD_CLASSES[idx])
             idx += 1
     df = train_synth_df[train_synth_df['event_label'].apply(lambda x: x in allowed_classes)]
-    return df
+    return df.sample(frac=1)
 
 
 if __name__ == '__main__':
@@ -575,7 +575,7 @@ if __name__ == '__main__':
         crnn, crnn_ema = to_cuda_if_available([crnn, crnn_ema])
 
         if sort_class:
-            th = 5 if state else 10
+            th = 5
             weak_df = select_classes_for_epoch_weak(epoch, train_weak_df, th)
             synth_df = select_classes_for_epoch_synth(epoch, train_synth_df, th)
             training_data, weak_mask, strong_mask = construct_training_data(epoch, weak_df, synth_df,
