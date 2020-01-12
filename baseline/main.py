@@ -21,6 +21,7 @@ from DatasetDcase2019Task4 import DatasetDcase2019Task4
 from DataLoad import DataLoadDf, ConcatDataset, MultiStreamBatchSampler
 from utils.Scaler import Scaler
 from TestModel import test_model
+from feature_extractor import extract_features_from_meta
 from evaluation_measures import get_f_measure_by_class, get_predictions, audio_tagging_results, compute_strong_metrics
 from models.CRNN import CRNN
 import config as cfg
@@ -28,6 +29,23 @@ from utils.utils import ManyHotEncoder, create_folder, SaveBest, to_cuda_if_avai
     get_transforms, AverageMeterSet
 from utils.Logger import LOG
 from datetime import datetime
+
+
+def check_class_distribution(df, csv):
+    filename = csv.rsplit(os.path.sep)[-1]
+    counts = []
+    if csv == cfg.weak:
+        all_configurations = df["event_labels"].value_counts()
+        for cl in cfg.classes:
+            counts.append(df.event_labels.str.count(cl).sum())
+    else:
+        all_configurations = df["event_label"].value_counts()
+        for cl in cfg.classes:
+            counts.append(df.event_label.str.count(cl).sum())
+
+    all_configurations.to_csv(os.path.join(cfg.workspace, cfg.features, "class_count", "all" + filename), header=True)
+    occurances = pd.Series(counts, index=cfg.classes)
+    occurances.to_csv(os.path.join(cfg.workspace, cfg.features, "class_count", filename), header=True)
 
 
 def adjust_learning_rate(optimizer, rampup_value, rampdown_value):
@@ -213,10 +231,12 @@ def add_parser_arguments(parser):
     # Learning config: whether to sort data, use unlabeled samples
     parser.add_argument("-o", '--ordered', dest='sort', action='store_true', default=False,
                         help="Sorting data so as to perform Curriculum Learning.")
-    parser.add_argument("-u", '--skip_unlabeled', dest='skip_unlabeled', action='store_true', default=True,
+    parser.add_argument("-u", '--skip_unlabeled', dest='skip_unlabeled', action='store_true', default=False,
                         help="Skipping large unlabeled audio dataset.")
     parser.add_argument("-f", '--flatness', dest='use_flatness', action='store_true', default=False,
                         help="Sort audio files according to spectral flatness.")
+    parser.add_argument('--snr', dest='use_snr', action='store_true', default=False,
+                        help="Sort audio files according to signal-to-noise ratio.")
 
     # Neural-network related
     parser.add_argument("-c", '--freeze_cnn', dest='freeze_cnn', action='store_true', default=False,
@@ -246,6 +266,7 @@ if __name__ == '__main__':
     sort = f_args.sort
     skip_unlabeled = f_args.skip_unlabeled
     use_flatness = f_args.use_flatness
+    use_snr = f_args.use_snr
 
     freeze_cnn = f_args.freeze_cnn
     freeze_rnn = f_args.freeze_rnn
@@ -259,7 +280,8 @@ if __name__ == '__main__':
     LOG.info("Downloading data = {}".format(download))
     LOG.info("Sorting = {}".format(sort))
     LOG.info("Use unlabeled = {}".format(not skip_unlabeled))
-    LOG.info("Sort according to spectral flatness= {}".format(use_flatness))
+    LOG.info("Sort according to spectral flatness = {}".format(use_flatness))
+    LOG.info("Sort according to snr = {}".format(use_snr))
 
     add_dir_model_name = "_with_synthetic"
 
@@ -313,15 +335,23 @@ if __name__ == '__main__':
                                     base_feature_dir=os.path.join(cfg.workspace, "dataset", "features"),
                                     save_log_feature=False)
 
-    if use_flatness:
+    if use_flatness or use_snr:
+        if not os.path.isfile(os.path.join(cfg.workspace, cfg.weak_f)):
+            extract_features_from_meta(os.path.join(cfg.workspace, cfg.weak))
+        if not os.path.isfile(os.path.join(cfg.workspace, cfg.synthetic_f)):
+            extract_features_from_meta(os.path.join(cfg.workspace, cfg.synthetic))
+        if not os.path.isfile(os.path.join(cfg.workspace, cfg.unlabel_f)):
+            extract_features_from_meta(os.path.join(cfg.workspace, cfg.unlabel))
         weak_path = cfg.weak_f
         synthetic_path = cfg.synthetic_f
+        unlabel_path = cfg.unlabel_f
     else:
         weak_path = cfg.weak
         synthetic_path = cfg.synthetic
+        unlabel_path = cfg.unlabel
 
     weak_df = dataset.initialize_and_get_df(weak_path, reduced_number_of_data, download=download)
-    unlabel_df = dataset.initialize_and_get_df(cfg.unlabel, reduced_number_of_data, download=download)
+    unlabel_df = dataset.initialize_and_get_df(unlabel_path, reduced_number_of_data, download=download)
 
     # Event if synthetic not used for training, used on validation purpose
     synthetic_df = dataset.initialize_and_get_df(synthetic_path, reduced_number_of_data, download=download)
@@ -353,16 +383,22 @@ if __name__ == '__main__':
     train_synth_df.offset = train_synth_df.offset * cfg.sample_rate // cfg.hop_length // pooling_time_ratio
     LOG.debug(valid_synth_df.event_label.value_counts())
 
+    # check_class_distribution(weak_df, cfg.weak)
+    # check_class_distribution(synthetic_df, cfg.synthetic)
+    # check_class_distribution(validation_df, cfg.validation)
+
     if sort:
         train_weak_df = sort_weak_df(train_weak_df)
         train_synth_df = sort_synthetic_df(train_synth_df)
         # TODO: Research on cc learning, is the validation set ordered accordingly?
-
     if use_flatness:
+        # sort ascending - the values are from -inf to 0 where -inf is the perfect sound and 0 is a perfect white noise
         train_weak_df = train_weak_df.sort_values(by=["Spectral flatness"])
         train_synth_df = train_synth_df.sort_values(by=["Spectral flatness"])
-        print(train_weak_df.head())
-
+    if use_snr:
+        # sort descending - the values above 0 dB mean more signal than noise
+        train_weak_df = train_weak_df.sort_values(by=["SNR"], ascending=False)
+        train_synth_df = train_synth_df.sort_values(by=["SNR"], ascending=False)
 
     train_weak_data = DataLoadDf(train_weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                  transform=transforms)
@@ -402,7 +438,7 @@ if __name__ == '__main__':
     concat_dataset = ConcatDataset(list_dataset)
     sampler = MultiStreamBatchSampler(concat_dataset,
                                       batch_sizes=batch_sizes,
-                                      shuffle=(not sort))
+                                      shuffle=not(sort or use_flatness or use_snr))
 
     training_data = DataLoader(concat_dataset, batch_sampler=sampler)
 
