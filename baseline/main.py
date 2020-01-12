@@ -301,6 +301,35 @@ def get_metrics_result_list(event_metric):
     results = [event_metric['Nref'], f1, precision, recall, acc]
     return results
 
+def construct_training_data(weak_df, synth_df, shuffle):
+    weak_data = DataLoadDf(weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df)
+    synth_data = DataLoadDf(synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df)
+
+    list_dataset = [weak_data, synth_data]
+    if cfg.weak_part_size and cfg.strong_part_size:
+        batch_sizes = [cfg.weak_part_size, cfg.strong_part_size]
+        strong_mask = slice(cfg.weak_part_size, cfg.batch_size)
+    else:
+        batch_sizes = [cfg.batch_size // 2, cfg.batch_size // 2]
+        strong_mask = slice(cfg.batch_size // 2, cfg.batch_size)
+
+    # Assume weak data is always the first one
+    weak_mask = slice(batch_sizes[0])
+
+    scaler = Scaler()
+    scaler.calculate_scaler(ConcatDataset(list_dataset))
+    LOG.debug(scaler.mean_)
+
+    transforms = get_transforms(cfg.max_frames, scaler, augment_type="noise")
+    for i in range(len(list_dataset)):
+        list_dataset[i].set_transform(transforms)
+
+    concat_dataset = ConcatDataset(list_dataset)
+    sampler = MultiStreamBatchSampler(concat_dataset,
+                                      batch_sizes=batch_sizes,
+                                      shuffle=shuffle)
+    training_data = DataLoader(concat_dataset, batch_sampler=sampler)
+    return training_data, weak_mask, strong_mask
 
 def add_parser_arguments(parser):
     # Configuration: data subset, model path etc
@@ -356,6 +385,7 @@ if __name__ == '__main__':
     use_flatness = f_args.use_flatness
     use_snr = f_args.use_snr
     assert sum([sort, sort_overlap, use_flatness, use_snr]) <= 1
+    do_shuffle = not (sort or sort_overlap or use_flatness or use_snr)
 
     freeze_cnn = f_args.freeze_cnn
     freeze_rnn = f_args.freeze_rnn
@@ -420,6 +450,14 @@ if __name__ == '__main__':
     # ##############
     # DATA
     # ##############
+    # maybe use scaler here?
+    transforms = get_transforms(cfg.max_frames)
+    classes = cfg.classes
+    if state:
+        many_hot_encoder = ManyHotEncoder.load_state_dict(state["many_hot_encoder"])
+    else:
+        many_hot_encoder = ManyHotEncoder(classes, n_frames=cfg.max_frames // pooling_time_ratio)
+
     dataset = DatasetDcase2019Task4(cfg.workspace,
                                     base_feature_dir=os.path.join(cfg.workspace, "dataset", "features"),
                                     save_log_feature=False)
@@ -440,20 +478,12 @@ if __name__ == '__main__':
         unlabel_path = cfg.unlabel
 
     weak_df = dataset.initialize_and_get_df(weak_path, reduced_number_of_data, download=download)
-    unlabel_df = dataset.initialize_and_get_df(unlabel_path, reduced_number_of_data, download=download)
+    if not skip_unlabeled:
+        unlabel_df = dataset.initialize_and_get_df(unlabel_path, reduced_number_of_data, download=download)
 
     # Event if synthetic not used for training, used on validation purpose
     synthetic_df = dataset.initialize_and_get_df(synthetic_path, reduced_number_of_data, download=download)
     validation_df = dataset.initialize_and_get_df(cfg.validation, reduced_number_of_data, download=download)
-
-    classes = cfg.classes
-    if state:
-        many_hot_encoder = ManyHotEncoder.load_state_dict(state["many_hot_encoder"])
-    else:
-        many_hot_encoder = ManyHotEncoder(classes, n_frames=cfg.max_frames // pooling_time_ratio)
-
-    # maybe use scaler here?
-    transforms = get_transforms(cfg.max_frames)
 
     # Divide weak in train and valid
     train_weak_df = weak_df.sample(frac=0.8, random_state=26)
@@ -496,7 +526,8 @@ if __name__ == '__main__':
 
     train_weak_data = DataLoadDf(train_weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                  transform=transforms)
-    unlabel_data = DataLoadDf(unlabel_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
+    if not skip_unlabeled:
+        unlabel_data = DataLoadDf(unlabel_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                               transform=transforms)
     train_synth_data = DataLoadDf(train_synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                   transform=transforms)
@@ -532,7 +563,7 @@ if __name__ == '__main__':
     concat_dataset = ConcatDataset(list_dataset)
     sampler = MultiStreamBatchSampler(concat_dataset,
                                       batch_sizes=batch_sizes,
-                                      shuffle=not (sort or use_flatness or use_snr))
+                                      shuffle=do_shuffle)
 
     training_data = DataLoader(concat_dataset, batch_sampler=sampler)
 
