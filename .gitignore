@@ -17,4 +17,3 @@ dataset/check_files/
 dataset/add_missing_files.py
 
 *mdl
-*.ipynb

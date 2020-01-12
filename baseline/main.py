@@ -692,8 +692,6 @@ if __name__ == '__main__':
                 file.write(';'.join([event, *results, '\n']))
             file.write('\n')  # next epoch separator
 
-        # Plot graph with a chosen metrics and graph of loss function
-        generate_graphs(res_classes_fullpath, res_fullpath)
 
         state['model']['state_dict'] = crnn.state_dict()
         state['model_ema']['state_dict'] = crnn_ema.state_dict()
@@ -717,6 +715,8 @@ if __name__ == '__main__':
                 model_fname = os.path.join(saved_model_dir, "baseline_best")
                 torch.save(state, model_fname)
 
+
+
     if cfg.save_best:
         model_fname = os.path.join(saved_model_dir, "baseline_best")
         state = torch.load(model_fname)
@@ -729,3 +729,6 @@ if __name__ == '__main__':
     # ##############
     predicitons_fname = os.path.join(saved_pred_dir, "baseline_validation.csv")
     test_model(state, cfg.validation, reduced_number_of_data, predicitons_fname)
+
+    # Plot graph with a chosen metrics and graph of loss function
+    generate_graphs(res_classes_fullpath, res_fullpath)
