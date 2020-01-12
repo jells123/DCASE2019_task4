@@ -52,7 +52,7 @@ def print_summary_graphs():
     summary_files = [file for file in files if file not in class_files]
 
     # PRINTING ALL METRICS
-    # print_all_metrics(summary_files)
+    print_all_metrics(summary_files)
 
     columnNames = ["filename", "freeze_cnn", "freeze_rnn", "model_path", "no_download", "skip_cnn", "skip_dense",
                    "skip_rnn", "skip_unlabeled", "sort", "subpart_data", "use_flatness", "use_snr", "sort_overlap",
