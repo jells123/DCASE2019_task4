@@ -46,7 +46,7 @@ batch_size = 16 #24
 weak_part_size = 7
 strong_part_size = 9
 
-n_epoch = 20
+n_epoch = 50
 
 checkpoint_epochs = 1
 
