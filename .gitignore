@@ -8,6 +8,7 @@ tmp/
 features/
 missing_files/
 stored_data/
+results/
 
 baseline/test/
 
@@ -15,5 +16,5 @@ dataset/audio/
 dataset/check_files/
 dataset/add_missing_files.py
 
-*.csv
 *mdl
+*.ipynb
