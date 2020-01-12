@@ -1,3 +1,0 @@
-Namespace(freeze_cnn=False, freeze_rnn=False, model_path='E:\\STUDIA\\ITI\\Semestr_2\\PBP\\DCASE2019_task4\\baseline\\models\\dcase2019_t4_mdl', no_download=True, skip_cnn=False, skip_dense=True, skip_rnn=False, skip_unlabeled=True, sort=True, subpart_data=None, use_flatness=True)
-
-weak_loss;strong_loss;consistency_weak_loss;consistency_strong_loss;global_valid
