@@ -170,6 +170,8 @@ def train(train_loader, model, optimizer, epoch, ema_model=None, weak_mask=None,
 
 
 def sort_weak_df(weak_df):
+    # shuffle first
+    weak_df = weak_df.sample(frac=1)
     # sort by classes per file counts
     weak_df['event_labels_count'] = weak_df['event_labels'].apply(lambda x: x.count(','))
     weak_df = weak_df.sort_values(by='event_labels_count', ascending=True)
@@ -180,6 +182,8 @@ def sort_weak_df(weak_df):
 
 
 def sort_synthetic_df(synthetic_df):
+    # shuffle first
+    synthetic_df = synthetic_df.sample(frac=1)
     # sort by classes per file counts
     label_counts_df = synthetic_df[['filename', 'event_label']].groupby('filename').count().rename(
         columns={"event_label": "event_labels_count"})
