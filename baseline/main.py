@@ -183,7 +183,7 @@ def get_metrics_result_list(event_metric):
     return results
 
 
-def construct_training_data(epoch_num, weak_df, synth_df, shuffle):
+def construct_training_data(epoch_num, weak_df, synth_df, shuffle, scaler=None):
     weak_data = DataLoadDf(weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df)
     synth_data = DataLoadDf(synth_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df)
 
@@ -198,9 +198,10 @@ def construct_training_data(epoch_num, weak_df, synth_df, shuffle):
     # Assume weak data is always the first one
     weak_mask = slice(batch_sizes[0])
 
-    scaler = Scaler()
-    scaler.calculate_scaler(ConcatDataset(list_dataset))
-    LOG.debug(scaler.mean_)
+    if not scaler:
+        scaler = Scaler()
+        scaler.calculate_scaler(ConcatDataset(list_dataset))
+        LOG.debug(scaler.mean_)
 
     transforms = get_transforms(cfg.max_frames, scaler, augment_type="noise")
     for i in range(len(list_dataset)):
@@ -234,7 +235,7 @@ def add_parser_arguments(parser):
                         help="Sort audio files according to signal-to-noise ratio.")
     parser.add_argument('--sort_overlap', dest='sort_overlap', action='store_true', default=False,
                         help="Sort weak data by class counts, and synthetic strong data by overlapping events difficulty.")
-    parser.add_argument('--sort_by_class', dest='sort_class', action='store_true', default=False,
+    parser.add_argument('--sort_class', dest='sort_class', action='store_true', default=False,
                         help="Sort by class difficulties, based on initial training performance using shuffled data.")
 
     # Neural-network related
@@ -336,7 +337,7 @@ if __name__ == '__main__':
     # ##############
     # DATA
     # ##############
-    # maybe use scaler here?
+
     transforms = get_transforms(cfg.max_frames)
     classes = cfg.classes
     if state:
@@ -439,7 +440,6 @@ if __name__ == '__main__':
         scaler.load_state_dict(state["scaler"])
     else:
         scaler.calculate_scaler(ConcatDataset(list_dataset))
-
     LOG.debug(scaler.mean_)
 
     transforms = get_transforms(cfg.max_frames, scaler, augment_type="noise")
@@ -504,7 +504,6 @@ if __name__ == '__main__':
         else:
             NotImplementedError("Only models trained with Adam optimizer supported for now")
 
-    bce_loss = nn.BCELoss()  # ? unused ?
     if not state:
         state = {
             'model': {"name": crnn.__class__.__name__,
@@ -545,7 +544,7 @@ if __name__ == '__main__':
         crnn, crnn_ema = to_cuda_if_available([crnn, crnn_ema])
 
         if sort_class:
-            training_data, weak_mask, strong_mask = construct_training_data(train_weak_df, train_synth_df,
+            training_data, weak_mask, strong_mask = construct_training_data(epoch, train_weak_df, train_synth_df,
                                                                             shuffle=do_shuffle)
 
         meters = train(training_data, crnn, optimizer, epoch, ema_model=crnn_ema, weak_mask=weak_mask,
