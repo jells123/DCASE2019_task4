@@ -29,6 +29,39 @@ from utils.utils import ManyHotEncoder, create_folder, SaveBest, to_cuda_if_avai
     get_transforms, AverageMeterSet
 from utils.Logger import LOG
 from datetime import datetime
+import matplotlib.pyplot as plt
+
+
+def generate_graphs(metrics_filepath, epoch_filepath):
+    dirpath = os.path.splitext(metrics_filepath)[0]
+    if not os.path.exists(dirpath):
+        os.mkdir(dirpath)
+
+    df = pd.read_csv(metrics_filepath, sep=";")
+    del df["Acc_Seg"]
+    df.columns = ['weak-F1', 'Nref', "F", "Pre", "Rec", "Acc", "Nref_Seg", "F_seg", "Pre_Seg", "Rec_Seg", "Acc_Seg"]
+    for column in df.columns:
+        fig, ax = plt.subplots(figsize=(10, 7))
+        ax.set(xlabel="Epoch", ylabel=column)
+        pl = df.groupby(df.index)[column].plot(legend=True,
+                                               ax=ax,
+                                               use_index=False,
+                                               title="{} values for each epoch".format(column))
+        plt.savefig(os.path.join(dirpath, column))
+
+    dirpath = os.path.splitext(epoch_filepath)[0]
+    if not os.path.exists(dirpath):
+        os.mkdir(dirpath)
+    df2 = pd.read_csv(epoch_filepath, sep=";", skiprows=2)
+    for column in df2.columns:
+        fig, ax = plt.subplots(figsize=(10, 7))
+        ax.set(xlabel="Epoch", ylabel=column)
+        pl = df2.plot(y=column,
+                      use_index=True,
+                      ax=ax,
+                      title="{} values for each epoch".format(column),
+                      legend=False)
+        plt.savefig(os.path.join(dirpath, column))
 
 
 def check_class_distribution(df, csv):
@@ -566,6 +599,9 @@ if __name__ == '__main__':
                 results = list(map(lambda s: "{:.3f}".format(s), per_class_results[event]))
                 file.write(';'.join([event, *results, '\n']))
             file.write('\n')  # next epoch separator
+
+        # Plot graph with a chosen metrics and graph of loss function
+        generate_graphs(res_classes_fullpath, res_fullpath)
 
         state['model']['state_dict'] = crnn.state_dict()
         state['model_ema']['state_dict'] = crnn_ema.state_dict()

@@ -49,6 +49,10 @@ strong_part_size = 9
 
 n_epoch = 50
 
+# column name of a metric
+# choose from: weak-F1, Nref, F, Pre, Rec, Acc, Nref_Seg, F_Seg, Pre_Seg, Rec_Seg Acc_Seg
+metrics = "F"
+
 checkpoint_epochs = 1
 
 save_best = True
