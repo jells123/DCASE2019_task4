@@ -328,8 +328,23 @@ if __name__ == '__main__':
     else:
         state = None
 
-    fname_timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
-    res_filename = fname_timestamp + ".csv"
+    fname_timestamp = datetime.now().strftime("%d-%m_%H-%M")
+
+    res_filename = 'init-cnn_' if model_path else '0init_'
+
+    if sort:
+        res_filename += 'cc-sort' # class count sort
+    elif sort_overlap:
+        res_filename += 'ov-sort' # overlap sort
+    elif sort_class:
+        res_filename += 'cd-sort' # class difficulty sort
+    elif use_flatness:
+        res_filename += 'flat-sort'
+    elif use_snr:
+        res_filename += 'snr-sort'
+
+    res_filename += "_" + fname_timestamp + ".csv"
+
     LOG.info(f"Saving results using {res_filename}")
     if not os.path.exists(os.path.join('..', 'results')):
         os.makedirs(os.path.join('..', 'results'))
@@ -567,7 +582,8 @@ if __name__ == '__main__':
     # ##############
     # Train
     # ##############
-    for epoch in range(cfg.n_epoch):
+    for epoch in range(1):
+        # for epoch in range(cfg.n_epoch):
         LOG.info(f"\n\n\t>>> >>> EPOCH {epoch}\n")
         crnn = crnn.train()
         crnn_ema = crnn_ema.train()
@@ -647,7 +663,17 @@ if __name__ == '__main__':
     # Validation
     # ##############
     predicitons_fname = os.path.join(saved_pred_dir, "baseline_validation.csv")
-    test_model(state, cfg.validation, reduced_number_of_data, predicitons_fname)
+    (metric_event, metric_segment), weak_metric = test_model(state, cfg.validation, reduced_number_of_data, predicitons_fname)
+
+    with open(res_fullpath.replace('.csv', '_test.csv'), 'a') as file:
+        file.write("METRIC EVENT\n")
+        file.write(str(metric_event.results()))
+        file.write("METRIC SEGMENT\n")
+        file.write(str(metric_segment.results()))
+        file.write("WEAK METRIC\n")
+        file.write("Weak F1-score per class: \n {}".format(pd.DataFrame(weak_metric * 100, many_hot_encoder.labels)))
+        file.write("\nWeak F1-score macro averaged: {}".format(np.mean(weak_metric)))
+
 
     # Plot graph with a chosen metrics and graph of loss function
     generate_graphs(res_classes_fullpath, res_fullpath)
