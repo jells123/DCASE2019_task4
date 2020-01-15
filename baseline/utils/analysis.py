@@ -11,28 +11,32 @@ def generate_graphs(metrics_filepath, epoch_filepath):
     df = pd.read_csv(metrics_filepath, sep=";")
     del df["Acc_Seg"]
     df.columns = ['weak-F1', 'Nref', "F", "Pre", "Rec", "Acc", "Nref_Seg", "F_seg", "Pre_Seg", "Rec_Seg", "Acc_Seg"]
-    for column in df.columns:
-        fig, ax = plt.subplots(figsize=(10, 7))
-        ax.set(xlabel="Epoch", ylabel=column)
-        pl = df.groupby(df.index)[column].plot(legend=True,
-                                               ax=ax,
-                                               use_index=False,
-                                               title="{} values for each epoch".format(column))
-        plt.savefig(os.path.join(dirpath, column))
+    if df.shape[0] > 0:
+        for column in df.columns:
+            fig, ax = plt.subplots(figsize=(10, 7))
+            ax.set(xlabel="Epoch", ylabel=column)
+            pl = df.groupby(df.index)[column].plot(legend=True,
+                                                   ax=ax,
+                                                   use_index=False,
+                                                   title="{} values for each epoch".format(column))
+            plt.savefig(os.path.join(dirpath, column))
+            plt.close()
 
     dirpath = os.path.splitext(epoch_filepath)[0]
     if not os.path.exists(dirpath):
         os.mkdir(dirpath)
     df2 = pd.read_csv(epoch_filepath, sep=";", skiprows=2)
-    for column in df2.columns:
-        fig, ax = plt.subplots(figsize=(10, 7))
-        ax.set(xlabel="Epoch", ylabel=column)
-        pl = df2.plot(y=column,
-                      use_index=True,
-                      ax=ax,
-                      title="{} values for each epoch".format(column),
-                      legend=False)
-        plt.savefig(os.path.join(dirpath, column))
+    if df2.shape[0] > 0:
+        for column in df2.columns:
+            fig, ax = plt.subplots(figsize=(10, 7))
+            ax.set(xlabel="Epoch", ylabel=column)
+            pl = df2.plot(y=column,
+                          use_index=True,
+                          ax=ax,
+                          title="{} values for each epoch".format(column),
+                          legend=False)
+            plt.savefig(os.path.join(dirpath, column))
+            plt.close()
 
 
 def check_class_distribution(df, csv):
