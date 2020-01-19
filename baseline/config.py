@@ -47,7 +47,7 @@ batch_size = 16 #24
 weak_part_size = 7
 strong_part_size = 9
 
-n_epoch = 50
+n_epoch = 100
 
 # column name of a metric
 # choose from: weak-F1, Nref, F, Pre, Rec, Acc, Nref_Seg, F_Seg, Pre_Seg, Rec_Seg Acc_Seg

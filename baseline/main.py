@@ -286,6 +286,11 @@ def select_classes_for_epoch_synth(epoch, train_synth_df, th):
 
 
 if __name__ == '__main__':
+    torch.manual_seed(0)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(0)
+
     LOG.info("MEAN TEACHER")
 
     parser = argparse.ArgumentParser(description="")
@@ -667,12 +672,11 @@ if __name__ == '__main__':
     with open(res_fullpath.replace('.csv', '_test.csv'), 'a') as file:
         file.write("METRIC EVENT\n")
         file.write(str(metric_event.results()))
-        file.write("METRIC SEGMENT\n")
+        file.write("\nMETRIC SEGMENT\n")
         file.write(str(metric_segment.results()))
-        file.write("WEAK METRIC\n")
-        file.write("Weak F1-score per class: \n {}".format(pd.DataFrame(weak_metric * 100, many_hot_encoder.labels)))
+        file.write("\nWEAK METRIC\n")
+        file.write("\nWeak F1-score per class: \n {}".format(pd.DataFrame(weak_metric * 100, many_hot_encoder.labels)))
         file.write("\nWeak F1-score macro averaged: {}".format(np.mean(weak_metric)))
-
 
     # Plot graph with a chosen metrics and graph of loss function
     generate_graphs(res_classes_fullpath, res_fullpath)

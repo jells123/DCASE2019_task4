@@ -16,4 +16,5 @@ dataset/audio/
 dataset/check_files/
 dataset/add_missing_files.py
 
-*mdl
+*mdl.ipynb_checkpoints
+baseline/.ipynb_checkpoints
