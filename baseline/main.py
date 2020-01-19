@@ -582,8 +582,7 @@ if __name__ == '__main__':
     # ##############
     # Train
     # ##############
-    for epoch in range(1):
-        # for epoch in range(cfg.n_epoch):
+    for epoch in range(cfg.n_epoch):
         LOG.info(f"\n\n\t>>> >>> EPOCH {epoch}\n")
         crnn = crnn.train()
         crnn_ema = crnn_ema.train()
