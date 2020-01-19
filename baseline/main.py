@@ -8,6 +8,7 @@
 import argparse
 import os
 import time
+import random
 
 import pandas as pd
 import numpy as np
@@ -286,10 +287,12 @@ def select_classes_for_epoch_synth(epoch, train_synth_df, th):
 
 
 if __name__ == '__main__':
+    
     torch.manual_seed(0)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     np.random.seed(0)
+    random.seed(0)
 
     LOG.info("MEAN TEACHER")
 

@@ -20,7 +20,7 @@ from utils.Logger import LOG
 
 torch.manual_seed(0)
 random.seed(0)
-
+np.random.seed(0)
 
 class DataLoadDf(Dataset):
     """ Class derived from pytorch Dataset
