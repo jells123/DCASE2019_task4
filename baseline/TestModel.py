@@ -11,7 +11,6 @@ from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
 
-
 from DataLoad import DataLoadDf
 from DatasetDcase2019Task4 import DatasetDcase2019Task4
 from evaluation_measures import audio_tagging_results, get_f_measure_by_class, compute_strong_metrics, get_predictions
@@ -60,9 +59,18 @@ def test_model(state, reference_csv_path, reduced_number_of_data=None, strore_pr
 
     # Just an example of how to get the weak predictions from dataframes.
     # print(audio_tagging_results(df, predictions))
-    return (metric_event, metric_segment), weak_metric
+    return (metric_event, metric_segment), weak_metric, many_hot_encoder.labels
 
 
+def write_test_results_to_file(filename, metric_event, metric_segment, weak_labels, weak_metric):
+    with open(filename, 'w') as file:
+        file.write("METRIC EVENT\n")
+        file.write(str(metric_event.results()))
+        file.write("\nMETRIC SEGMENT\n")
+        file.write(str(metric_segment.results()))
+        file.write("\nWEAK METRIC\n")
+        file.write("\nWeak F1-score per class: \n {}".format(pd.DataFrame(weak_metric * 100, weak_labels)))
+        file.write("\nWeak F1-score macro averaged: {}".format(np.mean(weak_metric)))
 
 
 if __name__ == '__main__':
@@ -79,8 +87,10 @@ if __name__ == '__main__':
     model_path = f_args.model_path
     expe_state = torch.load(model_path, map_location="cpu")
 
-    test_model(expe_state, cfg.eval2018, reduced_number_of_data)
-    test_model(expe_state, cfg.validation, reduced_number_of_data, "validation2019_predictions.csv")
-
-
-
+    (metric_event, metric_segment), weak_metric, weak_labels = test_model(expe_state, cfg.eval2018,
+                                                                          reduced_number_of_data)
+    # write_test_results_to_file("../results/BASELINE-eval2018.csv", metric_event, metric_segment, weak_labels, weak_metric)
+    (metric_event, metric_segment), weak_metric, weak_labels = test_model(expe_state, cfg.validation,
+                                                                          reduced_number_of_data,
+                                                                          "validation2019_predictions.csv")
+    # write_test_results_to_file("../results/BASELINE-validation.csv", metric_event, metric_segment, weak_labels, weak_metric)

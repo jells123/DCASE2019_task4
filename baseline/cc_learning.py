@@ -9,7 +9,7 @@ def sort_weak_df(weak_df):
     weak_df = weak_df.sort_values(by='event_labels_count', ascending=True)
     # bring df back to original state
     weak_df = weak_df.reset_index(drop=True)
-    weak_df = weak_df.drop(columns='event_labels_count')
+    # weak_df = weak_df.drop(columns='event_labels_count')
     return weak_df
 
 
@@ -22,11 +22,11 @@ def sort_synthetic_df(synthetic_df):
     synthetic_df = synthetic_df.join(label_counts_df, on='filename', how='outer')
     # bring df back to original state
     synthetic_df = synthetic_df.sort_values(by='event_labels_count', ascending=True)
-    synthetic_df = synthetic_df.drop(columns='event_labels_count')
+    # synthetic_df = synthetic_df.drop(columns='event_labels_count')
     return synthetic_df
 
 
-def sort_synthetic_df_by_events_overlap(synthetic_df):
+def sort_synthetic_df_by_events_overlap(synthetic_df, return_subset=None):
     # SPAGHETTI ITALIANO
     overlap_df = synthetic_df.sort_values(by=['filename', 'onset', 'offset']).reset_index(drop=True)
 
@@ -52,10 +52,14 @@ def sort_synthetic_df_by_events_overlap(synthetic_df):
     # 1st case: no overlapping
     no_overlap = overlap_df[overlap_df['overlaps'] == 0]
     no_overlap = no_overlap.sample(frac=1)
+    if return_subset == 1:
+        return no_overlap.reset_index()
 
     # 2nd case: one event overlaps another
     medium_overlap = overlap_df[overlap_df['overlaps'] == 1]
     medium_overlap = medium_overlap.sort_values(by='space_between_segments', ascending=False, na_position='first')
+    if return_subset == 2:
+        return pd.concat([no_overlap, medium_overlap]).sample(frac=1).reset_index()
 
     # 3rd case: there is an event inside another
     high_overlap = overlap_df[overlap_df['overlaps'] == 2]
@@ -69,5 +73,8 @@ def sort_synthetic_df_by_events_overlap(synthetic_df):
     high_overlap = high_overlap[synthetic_df.columns]
 
     result = pd.concat([no_overlap, medium_overlap, high_overlap]).reset_index()
-    return result
+    if return_subset == 3:
+        return result.sample(frac=1).reset_index()
+    else:
+        return result
 

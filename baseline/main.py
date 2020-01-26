@@ -236,8 +236,12 @@ def add_parser_arguments(parser):
                         help="Sort audio files according to spectral flatness.")
     parser.add_argument('--snr', dest='use_snr', action='store_true', default=False,
                         help="Sort audio files according to signal-to-noise ratio.")
+    parser.add_argument('--super_snr', dest='use_super_snr', action='store_true', default=False,
+                        help="Sort audio files according to signal-to-noise ratio AND grow the dataset based upon that.")
     parser.add_argument('--sort_overlap', dest='sort_overlap', action='store_true', default=False,
                         help="Sort weak data by class counts, and synthetic strong data by overlapping events difficulty.")
+    parser.add_argument('--sort_super_overlap', dest='sort_super_overlap', action='store_true', default=False,
+                        help="Sort weak data by class counts, and synthetic strong data by overlapping events difficulty AND grow the dataset based on that.")
     parser.add_argument('--sort_class', dest='sort_class', action='store_true', default=False,
                         help="Sort by class difficulties, based on initial training performance using shuffled data.")
 
@@ -285,6 +289,32 @@ def select_classes_for_epoch_synth(epoch, train_synth_df, th):
     df = train_synth_df[train_synth_df['event_label'].apply(lambda x: x in allowed_classes)]
     return df.sample(frac=1)
 
+def select_for_super_audio_feature(epoch, train_weak_df, train_synth_df, perc_25, perc_50, feature="SNR", th=10):
+    synth_weak_ratio = train_synth_df.shape[0] // train_weak_df.shape[0]
+    epoch = epoch + 1
+    if epoch // th == 0:
+        synth_df = train_synth_df[train_synth_df[feature] >= perc_50]
+        weak_df = train_weak_df.head(synth_df.shape[0] // synth_weak_ratio)
+    elif epoch // th == 1:
+        synth_df = train_synth_df[train_synth_df[feature] >= perc_25]
+        weak_df = train_weak_df.head(synth_df.shape[0] // synth_weak_ratio)
+    else:
+        synth_df, weak_df = train_weak_df, train_synth_df
+    return weak_df.sample(frac=1), synth_df.sample(frac=1)
+
+def select_for_super_overlap(epoch, train_weak_df, train_synth_df, th=10):
+    synth_weak_ratio = train_synth_df.shape[0] // train_weak_df.shape[0]
+    epoch = epoch + 1
+    if epoch // th == 0:
+        synth_df = sort_synthetic_df_by_events_overlap(train_synth_df, return_subset='low')
+        weak_df = train_weak_df.head(synth_df.shape[0] // synth_weak_ratio)
+    elif epoch // th == 1:
+        synth_df = sort_synthetic_df_by_events_overlap(train_synth_df, return_subset='medium')
+        weak_df = train_weak_df.head(synth_df.shape[0] // synth_weak_ratio)
+    else:
+        synth_df = sort_synthetic_df_by_events_overlap(train_synth_df, return_subset='high')
+        weak_df = train_weak_df.head(synth_df.shape[0] // synth_weak_ratio)
+    return weak_df, synth_df
 
 if __name__ == '__main__':
     
@@ -308,11 +338,20 @@ if __name__ == '__main__':
     # Only one of the below can be used at a time
     sort = f_args.sort
     sort_overlap = f_args.sort_overlap
+    sort_super_overlap = f_args.sort_super_overlap
     sort_class = f_args.sort_class
     use_flatness = f_args.use_flatness
     use_snr = f_args.use_snr
-    assert sum([sort, sort_overlap, sort_class, use_flatness, use_snr]) <= 1
-    do_shuffle = not (sort or sort_overlap or sort_class or use_flatness or use_snr)
+    use_super_snr = f_args.use_super_snr
+    assert sum([
+        sort, sort_overlap, sort_super_overlap, sort_class,
+        use_flatness, use_snr, use_super_snr
+    ]) <= 1
+    do_shuffle = not (
+            sort or sort_overlap or sort_class or sort_super_overlap
+            or use_flatness or use_snr or use_super_snr
+    )
+    growing_dataset = sort_class or sort_super_overlap or use_super_snr
 
     freeze_cnn = f_args.freeze_cnn
     freeze_rnn = f_args.freeze_rnn
@@ -328,6 +367,7 @@ if __name__ == '__main__':
     LOG.info("Use unlabeled = {}".format(not skip_unlabeled))
     LOG.info("Sort according to spectral flatness = {}".format(use_flatness))
     LOG.info("Sort according to snr = {}".format(use_snr))
+    LOG.info("Use super snr = {}".format(use_super_snr))
 
     add_dir_model_name = "_with_synthetic"
 
@@ -403,7 +443,7 @@ if __name__ == '__main__':
                                     base_feature_dir=os.path.join(cfg.workspace, "dataset", "features"),
                                     save_log_feature=False)
 
-    if use_flatness or use_snr:
+    if use_flatness or use_snr or use_super_snr:
         if not os.path.isfile(os.path.join(cfg.workspace, cfg.weak_f)):
             extract_features_from_meta(os.path.join(cfg.workspace, cfg.weak))
         if not os.path.isfile(os.path.join(cfg.workspace, cfg.synthetic_f)):
@@ -451,7 +491,7 @@ if __name__ == '__main__':
         train_weak_df = sort_weak_df(train_weak_df)
         train_synth_df = sort_synthetic_df(train_synth_df)
 
-    if sort_overlap:
+    if sort_overlap or sort_super_overlap:
         train_weak_df = sort_weak_df(train_weak_df)
         train_synth_df = sort_synthetic_df_by_events_overlap(train_synth_df)
 
@@ -460,10 +500,13 @@ if __name__ == '__main__':
         train_weak_df = train_weak_df.sort_values(by=["Spectral flatness"])
         train_synth_df = train_synth_df.sort_values(by=["Spectral flatness"])
 
-    if use_snr:
+    if use_snr or use_super_snr:
         # sort descending - the values above 0 dB mean more signal than noise
         train_weak_df = train_weak_df.sort_values(by=["SNR"], ascending=False)
         train_synth_df = train_synth_df.sort_values(by=["SNR"], ascending=False)
+        if use_super_snr:
+            snr_stats = train_synth_df["SNR"].describe()
+            snr_perc_25, snr_perc_50 = snr_stats['25%'], snr_stats['50%']
 
     train_weak_data = DataLoadDf(train_weak_df, dataset.get_feature_file, many_hot_encoder.encode_strong_df,
                                  transform=transforms)
@@ -597,12 +640,22 @@ if __name__ == '__main__':
 
         crnn, crnn_ema = to_cuda_if_available([crnn, crnn_ema])
 
-        if sort_class:
-            th = 5
-            weak_df = select_classes_for_epoch_weak(epoch, train_weak_df, th)
-            synth_df = select_classes_for_epoch_synth(epoch, train_synth_df, th)
+        if growing_dataset:
+            # those modes require growing dataset
+            if sort_class:
+                weak_df = select_classes_for_epoch_weak(epoch, train_weak_df, 5)
+                synth_df = select_classes_for_epoch_synth(epoch, train_synth_df, 5)
+            if use_super_snr:
+                weak_df, synth_df = select_for_super_audio_feature(epoch, train_weak_df, train_synth_df,
+                                                                   snr_perc_25, snr_perc_50, feature="SNR",
+                                                                   th=10)
+            if sort_super_overlap:
+                weak_df, synth_df = select_for_super_overlap(epoch, train_weak_df, train_synth_df, th=10)
+
+            print(f"Weak DF: {weak_df.shape[0]}, Synth DF: {synth_df.shape[0]}")
             training_data, weak_mask, strong_mask = construct_training_data(epoch, weak_df, synth_df,
                                                                             shuffle=do_shuffle)
+
         meters = train(training_data, crnn, optimizer, epoch, ema_model=crnn_ema, weak_mask=weak_mask,
                        strong_mask=strong_mask)
         overall_results = [meters[map_res_columns[m]].val for m in res_columns]
