@@ -52,13 +52,13 @@ def sort_synthetic_df_by_events_overlap(synthetic_df, return_subset=None):
     # 1st case: no overlapping
     no_overlap = overlap_df[overlap_df['overlaps'] == 0]
     no_overlap = no_overlap.sample(frac=1)
-    if return_subset == 1:
+    if return_subset == 'low':
         return no_overlap.reset_index()
 
     # 2nd case: one event overlaps another
     medium_overlap = overlap_df[overlap_df['overlaps'] == 1]
     medium_overlap = medium_overlap.sort_values(by='space_between_segments', ascending=False, na_position='first')
-    if return_subset == 2:
+    if return_subset == 'medium':
         return pd.concat([no_overlap, medium_overlap]).sample(frac=1).reset_index()
 
     # 3rd case: there is an event inside another
@@ -73,7 +73,7 @@ def sort_synthetic_df_by_events_overlap(synthetic_df, return_subset=None):
     high_overlap = high_overlap[synthetic_df.columns]
 
     result = pd.concat([no_overlap, medium_overlap, high_overlap]).reset_index()
-    if return_subset == 3:
+    if return_subset == 'high':
         return result.sample(frac=1).reset_index()
     else:
         return result
