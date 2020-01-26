@@ -299,7 +299,7 @@ def select_for_super_audio_feature(epoch, train_weak_df, train_synth_df, perc_25
         synth_df = train_synth_df[train_synth_df[feature] >= perc_25]
         weak_df = train_weak_df.head(synth_df.shape[0] // synth_weak_ratio)
     else:
-        synth_df, weak_df = train_weak_df, train_synth_df
+        weak_df, synth_df = train_weak_df, train_synth_df
     return weak_df.sample(frac=1), synth_df.sample(frac=1)
 
 def select_for_super_overlap(epoch, train_weak_df, train_synth_df, th=10):
@@ -384,12 +384,16 @@ if __name__ == '__main__':
         res_filename += 'cc-sort' # class count sort
     elif sort_overlap:
         res_filename += 'ov-sort' # overlap sort
+    elif sort_super_overlap:
+        res_filename += 'ov-sort++'
     elif sort_class:
         res_filename += 'cd-sort' # class difficulty sort
     elif use_flatness:
         res_filename += 'flat-sort'
     elif use_snr:
         res_filename += 'snr-sort'
+    elif use_super_snr:
+        res_filename += 'snr-sort++'
 
     res_filename += "_" + fname_timestamp + ".csv"
 
