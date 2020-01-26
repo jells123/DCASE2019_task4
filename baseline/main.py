@@ -378,24 +378,23 @@ if __name__ == '__main__':
 
     fname_timestamp = datetime.now().strftime("%d-%m_%H-%M")
 
-    res_filename = 'init-cnn_' if model_path else '0init_'
-
+    res_suffix = 'init-cnn_' if model_path else '0init_'
     if sort:
-        res_filename += 'cc-sort' # class count sort
+        res_suffix += 'cc-sort' # class count sort
     elif sort_overlap:
-        res_filename += 'ov-sort' # overlap sort
+        res_suffix += 'ov-sort' # overlap sort
     elif sort_super_overlap:
-        res_filename += 'ov-sort++'
+        res_suffix += 'ov-sort++'
     elif sort_class:
-        res_filename += 'cd-sort' # class difficulty sort
+        res_suffix += 'cd-sort' # class difficulty sort
     elif use_flatness:
-        res_filename += 'flat-sort'
+        res_suffix += 'flat-sort'
     elif use_snr:
-        res_filename += 'snr-sort'
+        res_suffix += 'snr-sort'
     elif use_super_snr:
-        res_filename += 'snr-sort++'
+        res_suffix += 'snr-sort++'
 
-    res_filename += "_" + fname_timestamp + ".csv"
+    res_filename = res_suffix + "_" + fname_timestamp + ".csv"
 
     LOG.info(f"Saving results using {res_filename}")
     if not os.path.exists(os.path.join('..', 'results')):
@@ -422,7 +421,7 @@ if __name__ == '__main__':
     with open(res_classes_fullpath, 'w') as file:
         file.write(';'.join(res_classes_columns) + "\n")
 
-    store_dir = os.path.join("stored_data", f"{fname_timestamp}_MeanTeacher")
+    store_dir = os.path.join("stored_data", f"{res_suffix}_{fname_timestamp}_MeanTeacher")
     saved_model_dir = os.path.join(store_dir, "model")
     saved_pred_dir = os.path.join(store_dir, "predictions")
     for folder_name in [store_dir, saved_model_dir, saved_pred_dir]:
@@ -727,7 +726,7 @@ if __name__ == '__main__':
     # Validation
     # ##############
     predicitons_fname = os.path.join(saved_pred_dir, "baseline_validation.csv")
-    (metric_event, metric_segment), weak_metric = test_model(state, cfg.validation, reduced_number_of_data, predicitons_fname)
+    (metric_event, metric_segment), weak_metric, weak_labels = test_model(state, cfg.validation, reduced_number_of_data, predicitons_fname)
 
     with open(res_fullpath.replace('.csv', '_test.csv'), 'a') as file:
         file.write("METRIC EVENT\n")
