@@ -244,6 +244,8 @@ def add_parser_arguments(parser):
                         help="Sort weak data by class counts, and synthetic strong data by overlapping events difficulty AND grow the dataset based on that.")
     parser.add_argument('--sort_class', dest='sort_class', action='store_true', default=False,
                         help="Sort by class difficulties, based on initial training performance using shuffled data.")
+    parser.add_argument('--sort_class_rev', dest='sort_class_rev', action='store_true', default=False,
+                        help="Sort by class difficulties, REVERSELY!, based on initial training performance using shuffled data.")
 
     # Neural-network related
     parser.add_argument("-c", '--freeze_cnn', dest='freeze_cnn', action='store_true', default=False,
@@ -264,13 +266,13 @@ SIMPLE_CLASSES = ['Speech', 'Alarm_bell_ringing', 'Cat', 'Blender', 'Electric_sh
 HARD_CLASSES = ['Dog', 'Frying', 'Dishes', 'Vacuum_cleaner', 'Running_water']
 
 
-def select_classes_for_epoch_weak(epoch, train_weak_df, th):
+def select_classes_for_epoch_weak(epoch, train_weak_df, th, rev=False):
     epoch = epoch + 1  # relative to numbers of elements in arrays, original numbering 0, 1, 2...
-    allowed_classes = SIMPLE_CLASSES.copy()
+    allowed_classes = SIMPLE_CLASSES.copy() if not rev else HARD_CLASSES.copy()
     if epoch > th:
         idx = 0
-        while len(allowed_classes) < epoch and idx < len(HARD_CLASSES):
-            allowed_classes.append(HARD_CLASSES[idx])
+        while len(allowed_classes) < epoch and idx < len(HARD_CLASSES if not rev else SIMPLE_CLASSES):
+            allowed_classes.append(HARD_CLASSES[idx] if not rev else SIMPLE_CLASSES[idx])
             idx += 1
     df = train_weak_df[train_weak_df['event_labels'].apply(
         lambda x: all([label in allowed_classes for label in x.split(',')])
@@ -278,13 +280,13 @@ def select_classes_for_epoch_weak(epoch, train_weak_df, th):
     return df.sample(frac=1)
 
 
-def select_classes_for_epoch_synth(epoch, train_synth_df, th):
+def select_classes_for_epoch_synth(epoch, train_synth_df, th, rev=False):
     epoch = epoch + 1  # relative to numbers of elements in arrays, original numbering 0, 1, 2...
-    allowed_classes = SIMPLE_CLASSES.copy()
+    allowed_classes = SIMPLE_CLASSES.copy() if not rev else HARD_CLASSES.copy()
     if epoch > th:
         idx = 0
-        while len(allowed_classes) < epoch and idx < len(HARD_CLASSES):
-            allowed_classes.append(HARD_CLASSES[idx])
+        while len(allowed_classes) < epoch and idx < len(HARD_CLASSES if not rev else SIMPLE_CLASSES):
+            allowed_classes.append(HARD_CLASSES[idx] if not rev else SIMPLE_CLASSES[idx])
             idx += 1
     df = train_synth_df[train_synth_df['event_label'].apply(lambda x: x in allowed_classes)]
     return df.sample(frac=1)
@@ -340,18 +342,19 @@ if __name__ == '__main__':
     sort_overlap = f_args.sort_overlap
     sort_super_overlap = f_args.sort_super_overlap
     sort_class = f_args.sort_class
+    sort_class_rev = f_args.sort_class_rev
     use_flatness = f_args.use_flatness
     use_snr = f_args.use_snr
     use_super_snr = f_args.use_super_snr
     assert sum([
-        sort, sort_overlap, sort_super_overlap, sort_class,
+        sort, sort_overlap, sort_super_overlap, sort_class, sort_class_rev,
         use_flatness, use_snr, use_super_snr
     ]) <= 1
     do_shuffle = not (
-            sort or sort_overlap or sort_class or sort_super_overlap
+            sort or sort_overlap or sort_class or sort_super_overlap or sort_class_rev
             or use_flatness or use_snr or use_super_snr
     )
-    growing_dataset = sort_class or sort_super_overlap or use_super_snr
+    growing_dataset = sort_class or sort_class_rev or sort_super_overlap or use_super_snr
 
     freeze_cnn = f_args.freeze_cnn
     freeze_rnn = f_args.freeze_rnn
@@ -387,6 +390,8 @@ if __name__ == '__main__':
         res_suffix += 'ov-sort++'
     elif sort_class:
         res_suffix += 'cd-sort' # class difficulty sort
+    elif sort_class_rev:
+        res_suffix += 'cv-rev-sort'
     elif use_flatness:
         res_suffix += 'flat-sort'
     elif use_snr:
@@ -645,9 +650,13 @@ if __name__ == '__main__':
 
         if growing_dataset:
             # those modes require growing dataset
-            if sort_class:
-                weak_df = select_classes_for_epoch_weak(epoch, train_weak_df, 5)
-                synth_df = select_classes_for_epoch_synth(epoch, train_synth_df, 5)
+            if sort_class or sort_class_rev:
+                if sort_class:
+                    weak_df = select_classes_for_epoch_weak(epoch, train_weak_df, 5, rev=False)
+                    synth_df = select_classes_for_epoch_synth(epoch, train_synth_df, 5, rev=False)
+                elif sort_class_rev:
+                    weak_df = select_classes_for_epoch_weak(epoch, train_weak_df, 15, rev=True)
+                    synth_df = select_classes_for_epoch_synth(epoch, train_synth_df, 15, rev=True)
             if use_super_snr:
                 weak_df, synth_df = select_for_super_audio_feature(epoch, train_weak_df, train_synth_df,
                                                                    snr_perc_25, snr_perc_50, feature="SNR",
